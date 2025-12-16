@@ -5,25 +5,42 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, Callable
 
-from .contracts import ToolResult
+from .contracts import (
+    ToolResult,
+    ERR_INVALID_INPUT,
+    ERR_NOT_FOUND,
+    ERR_CAPABILITY_MISSING,
+    ERR_TIMEOUT,
+    ERR_INTERNAL,
+)
 from .metadata import make_contract_v0, runtime_capabilities, tool_meta_json, find_blender_exe
+from .validate import validated_or_failure
 
 JsonDict = Dict[str, Any]
 
 
 def tool_system_ping(params: JsonDict) -> ToolResult:
+    # Allow extra fields on purpose here
     msg = params.get("message", "ping")
     return ToolResult.success({"reply": "pong", "echo": msg})
 
 
 def tool_schemas_get(params: JsonDict) -> ToolResult:
-    name = params.get("name")
-    if not isinstance(name, str) or not name:
-        return ToolResult.failure("invalid_input", "name must be a non-empty string")
+    schema = {
+        "type": "object",
+        "properties": {"name": {"type": "string"}},
+        "required": ["name"],
+        "additionalProperties": False,
+    }
+    bad = validated_or_failure(params, schema)
+    if bad:
+        return bad
+
+    name = params["name"]
     root = Path(__file__).resolve().parents[2]  # repo root
     p = root / "schemas" / name
     if not p.exists() or not p.is_file():
-        return ToolResult.failure("not_found", f"schema not found: {name}")
+        return ToolResult.failure(ERR_NOT_FOUND, f"schema not found: {name}")
     text = p.read_text(encoding="utf-8")
     return ToolResult.success({"name": name, "content": text})
 
@@ -39,18 +56,25 @@ def _extract_last_json_line(stdout: str) -> JsonDict:
 
 
 def tool_scene_snapshot(params: JsonDict) -> ToolResult:
-    timeout_sec = params.get("timeout_sec", 90)
-    if not isinstance(timeout_sec, int) or timeout_sec < 5 or timeout_sec > 600:
-        return ToolResult.failure("invalid_input", "timeout_sec must be an int between 5 and 600")
+    schema = {
+        "type": "object",
+        "properties": {"timeout_sec": {"type": "integer", "minimum": 5, "maximum": 600}},
+        "additionalProperties": False,
+    }
+    bad = validated_or_failure(params, schema)
+    if bad:
+        return bad
+
+    timeout_sec = int(params.get("timeout_sec", 90))
 
     root = Path(__file__).resolve().parents[2]  # repo root
     script = root / "bridge" / "blender_snapshot.py"
     if not script.exists():
-        return ToolResult.failure("not_found", f"missing blender script: {script}")
+        return ToolResult.failure(ERR_NOT_FOUND, f"missing blender script: {script}")
 
     blender = find_blender_exe()
     if not blender:
-        return ToolResult.failure("capability_missing", "Blender not available (set BLENDER_EXE or install Blender).")
+        return ToolResult.failure(ERR_CAPABILITY_MISSING, "Blender not available (set BLENDER_EXE or install Blender).")
 
     try:
         p = subprocess.run(
@@ -61,42 +85,57 @@ def tool_scene_snapshot(params: JsonDict) -> ToolResult:
             timeout=float(timeout_sec),
         )
     except subprocess.TimeoutExpired:
-        return ToolResult.failure("timeout", f"Blender snapshot exceeded timeout_sec={timeout_sec}")
+        return ToolResult.failure(ERR_TIMEOUT, f"Blender snapshot exceeded timeout_sec={timeout_sec}")
     except Exception as e:
-        return ToolResult.failure("internal_error", f"Failed to run Blender: {e}")
+        return ToolResult.failure(ERR_INTERNAL, f"Failed to run Blender: {e}")
 
     if p.returncode != 0:
         msg = f"Blender failed (code={p.returncode}). STDERR tail: {p.stderr.strip()[-800:]}"
-        return ToolResult.failure("internal_error", msg)
+        return ToolResult.failure(ERR_INTERNAL, msg)
 
     try:
         snap = _extract_last_json_line(p.stdout)
     except Exception as e:
         tail = "\n".join([ln for ln in p.stdout.splitlines() if ln.strip()][-30:])
-        return ToolResult.failure("internal_error", f"Could not parse snapshot JSON: {e}. STDOUT tail:\n{tail}")
+        return ToolResult.failure(ERR_INTERNAL, f"Could not parse snapshot JSON: {e}. STDOUT tail:\n{tail}")
 
     if snap.get("version") != "scene_state_v1":
-        return ToolResult.failure("internal_error", f"Unexpected snapshot version: {snap.get('version')}")
+        return ToolResult.failure(ERR_INTERNAL, f"Unexpected snapshot version: {snap.get('version')}")
 
     return ToolResult.success({"snapshot": snap})
 
 
-def tool_runtime_capabilities(_: JsonDict) -> ToolResult:
+def tool_runtime_capabilities(params: JsonDict) -> ToolResult:
+    schema = {"type": "object", "properties": {}, "additionalProperties": False}
+    bad = validated_or_failure(params, schema)
+    if bad:
+        return bad
     return ToolResult.success(runtime_capabilities())
 
 
-def tool_tools_list(_: JsonDict) -> ToolResult:
+def tool_tools_list(params: JsonDict) -> ToolResult:
+    schema = {"type": "object", "properties": {}, "additionalProperties": False}
+    bad = validated_or_failure(params, schema)
+    if bad:
+        return bad
     return ToolResult.success({"tools": tool_meta_json()})
 
 
 def tool_contract_get(params: JsonDict) -> ToolResult:
-    requested = params.get("requested_determinism", "deterministic")
-    timeout_sec = params.get("timeout_sec", 90)
+    schema = {
+        "type": "object",
+        "properties": {
+            "requested_determinism": {"type": "string", "enum": ["deterministic", "seeded", "nondeterministic"]},
+            "timeout_sec": {"type": "integer", "minimum": 5, "maximum": 600},
+        },
+        "additionalProperties": False,
+    }
+    bad = validated_or_failure(params, schema)
+    if bad:
+        return bad
 
-    if requested not in {"deterministic", "seeded", "nondeterministic"}:
-        return ToolResult.failure("invalid_input", "requested_determinism must be deterministic|seeded|nondeterministic")
-    if not isinstance(timeout_sec, int) or timeout_sec < 5 or timeout_sec > 600:
-        return ToolResult.failure("invalid_input", "timeout_sec must be an int between 5 and 600")
+    requested = params.get("requested_determinism", "deterministic")
+    timeout_sec = int(params.get("timeout_sec", 90))
 
     contract = make_contract_v0(requested_determinism=requested, timeout_sec=timeout_sec)
     return ToolResult.success({"contract": contract})

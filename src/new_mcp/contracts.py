@@ -1,34 +1,32 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, Optional
+from typing import Any, Dict, Optional
 
-SafetyMode = Literal["headless_safe", "ui_assisted", "unsafe_ops"]
-DeterminismClass = Literal["deterministic", "seeded", "nondeterministic"]
-
-
-@dataclass(frozen=True)
-class ToolMeta:
-    name: str
-    safety_mode: SafetyMode = "headless_safe"
-    determinism_class: DeterminismClass = "deterministic"
-    description: str = ""
+JsonDict = Dict[str, Any]
 
 
-@dataclass(frozen=True)
+# Canonical error/refusal codes (stable surface)
+ERR_INVALID_INPUT = "invalid_input"
+ERR_NOT_FOUND = "not_found"
+ERR_CAPABILITY_MISSING = "capability_missing"
+ERR_TIMEOUT = "timeout"
+ERR_REFUSED = "refused"
+ERR_INTERNAL = "internal_error"
+
+
+@dataclass
 class ToolResult:
     ok: bool
-    data: Optional[Any] = None
+    data: Optional[JsonDict] = None
     error_code: Optional[str] = None
     error_message: Optional[str] = None
-    determinism_class: DeterminismClass = "deterministic"
-    seed: Optional[int] = None
-    tolerance: Optional[float] = None
+    determinism_class: str = "deterministic"
 
     @staticmethod
-    def success(data: Any = None, *, determinism_class: DeterminismClass = "deterministic", seed: int | None = None, tolerance: float | None = None) -> "ToolResult":
-        return ToolResult(ok=True, data=data, determinism_class=determinism_class, seed=seed, tolerance=tolerance)
+    def success(data: JsonDict, determinism_class: str = "deterministic") -> "ToolResult":
+        return ToolResult(ok=True, data=data, determinism_class=determinism_class)
 
     @staticmethod
-    def failure(code: str, message: str) -> "ToolResult":
-        return ToolResult(ok=False, error_code=code, error_message=message)
+    def failure(code: str, message: str, determinism_class: str = "deterministic") -> "ToolResult":
+        return ToolResult(ok=False, error_code=code, error_message=message, determinism_class=determinism_class)
