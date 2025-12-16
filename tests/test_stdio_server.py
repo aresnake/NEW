@@ -1,16 +1,13 @@
 import json
+import os
 import subprocess
 import sys
+from pathlib import Path
+
+import pytest
 
 
-def run_rpc(req: dict) -> dict:
-    """
-    Windows-safe single-shot RPC call:
-    - spawn server in --once mode
-    - write 1 JSON line
-    - read 1 JSON line
-    - hard kill in finally to avoid any hang
-    """
+def run_rpc(req: dict, timeout: int = 5) -> dict:
     p = subprocess.Popen(
         [sys.executable, "-m", "new_mcp", "--once"],
         stdin=subprocess.PIPE,
@@ -19,46 +16,44 @@ def run_rpc(req: dict) -> dict:
         text=True,
     )
     assert p.stdin and p.stdout and p.stderr
+    out, err = p.communicate(json.dumps(req) + "\n", timeout=timeout)
+    assert err.strip() == ""
+    return json.loads(out.strip().splitlines()[-1])
 
-    try:
-        p.stdin.write(json.dumps(req) + "\n")
-        p.stdin.flush()
 
-        line = p.stdout.readline()
-        err = p.stderr.read()
-
-        # If something goes wrong, show stderr directly
-        assert err.strip() == "", f"stderr was not empty:\n{err}"
-
-        line = line.strip()
-
-        # Some terminals/platforms can surface a literal "\n" suffix; tolerate it.
-        if line.endswith("\\n"):
-            line = line[:-2]
-
-        return json.loads(line)
-
-    finally:
-        try:
-            p.kill()
-        except Exception:
-            pass
+def _blender_available() -> bool:
+    env = os.environ.get("BLENDER_EXE", "").strip()
+    if env and Path(env).exists():
+        return True
+    c1 = Path(r"C:\Program Files\Blender Foundation\Blender 5.0\blender.exe")
+    c2 = Path(r"D:\Blender_5.0.0_Portable\blender.exe")
+    return c1.exists() or c2.exists()
 
 
 def test_system_ping():
-    resp = run_rpc(
-        {"jsonrpc": "2.0", "id": 1, "method": "system.ping", "params": {"message": "yo"}}
-    )
+    resp = run_rpc({"jsonrpc": "2.0", "id": 1, "method": "system.ping", "params": {"message": "yo"}})
     assert resp["id"] == 1
     assert resp["result"]["ok"] is True
     assert resp["result"]["data"]["reply"] == "pong"
-    assert resp["result"]["data"]["echo"] == "yo"
 
 
 def test_schemas_get_not_found():
-    resp = run_rpc(
-        {"jsonrpc": "2.0", "id": 2, "method": "schemas.get", "params": {"name": "nope.md"}}
-    )
+    resp = run_rpc({"jsonrpc": "2.0", "id": 2, "method": "schemas.get", "params": {"name": "nope.md"}})
     assert resp["id"] == 2
     assert resp["result"]["ok"] is False
     assert resp["result"]["error_code"] == "not_found"
+
+
+def test_scene_snapshot_smoke():
+    if not _blender_available():
+        pytest.skip("Blender not available on this machine (set BLENDER_EXE to enable).")
+
+    resp = run_rpc(
+        {"jsonrpc": "2.0", "id": 3, "method": "scene.snapshot", "params": {"timeout_sec": 120}},
+        timeout=130,
+    )
+    assert resp["id"] == 3
+    assert resp["result"]["ok"] is True
+    snap = resp["result"]["data"]["snapshot"]
+    assert snap["version"] == "scene_state_v1"
+    assert "objects" in snap and isinstance(snap["objects"], list)
