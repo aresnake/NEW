@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, Callable, List
+from typing import Any, Dict, Callable
 
 from .contracts import ToolResult
+from .metadata import make_contract_v0, runtime_capabilities, tool_meta_json, find_blender_exe
 
 JsonDict = Dict[str, Any]
 
@@ -28,26 +28,7 @@ def tool_schemas_get(params: JsonDict) -> ToolResult:
     return ToolResult.success({"name": name, "content": text})
 
 
-def _find_blender_exe() -> str:
-    # Priority: env override
-    env = os.environ.get("BLENDER_EXE", "").strip()
-    if env and Path(env).exists():
-        return str(Path(env).resolve())
-
-    # Common paths (match your known installs)
-    c1 = r"C:\Program Files\Blender Foundation\Blender 5.0\blender.exe"
-    if Path(c1).exists():
-        return str(Path(c1).resolve())
-
-    c2 = r"D:\Blender_5.0.0_Portable\blender.exe"
-    if Path(c2).exists():
-        return str(Path(c2).resolve())
-
-    raise FileNotFoundError("BLENDER_EXE not found. Set env BLENDER_EXE to your blender.exe path.")
-
-
 def _extract_last_json_line(stdout: str) -> JsonDict:
-    # Blender may append lines like "Blender quit" after our JSON.
     lines = [ln.strip() for ln in stdout.splitlines() if ln.strip()]
     for ln in reversed(lines):
         if ln.endswith("\\n"):
@@ -58,12 +39,6 @@ def _extract_last_json_line(stdout: str) -> JsonDict:
 
 
 def tool_scene_snapshot(params: JsonDict) -> ToolResult:
-    """
-    Launch Blender headless and return a Scene Snapshot v1 (as dict).
-
-    Params (optional):
-      - timeout_sec: int (default 90)
-    """
     timeout_sec = params.get("timeout_sec", 90)
     if not isinstance(timeout_sec, int) or timeout_sec < 5 or timeout_sec > 600:
         return ToolResult.failure("invalid_input", "timeout_sec must be an int between 5 and 600")
@@ -73,10 +48,9 @@ def tool_scene_snapshot(params: JsonDict) -> ToolResult:
     if not script.exists():
         return ToolResult.failure("not_found", f"missing blender script: {script}")
 
-    try:
-        blender = _find_blender_exe()
-    except Exception as e:
-        return ToolResult.failure("capability_missing", f"Blender not available: {e}")
+    blender = find_blender_exe()
+    if not blender:
+        return ToolResult.failure("capability_missing", "Blender not available (set BLENDER_EXE or install Blender).")
 
     try:
         p = subprocess.run(
@@ -92,10 +66,7 @@ def tool_scene_snapshot(params: JsonDict) -> ToolResult:
         return ToolResult.failure("internal_error", f"Failed to run Blender: {e}")
 
     if p.returncode != 0:
-        msg = (
-            f"Blender failed (code={p.returncode}). "
-            f"STDERR tail: {p.stderr.strip()[-800:]}"
-        )
+        msg = f"Blender failed (code={p.returncode}). STDERR tail: {p.stderr.strip()[-800:]}"
         return ToolResult.failure("internal_error", msg)
 
     try:
@@ -104,15 +75,38 @@ def tool_scene_snapshot(params: JsonDict) -> ToolResult:
         tail = "\n".join([ln for ln in p.stdout.splitlines() if ln.strip()][-30:])
         return ToolResult.failure("internal_error", f"Could not parse snapshot JSON: {e}. STDOUT tail:\n{tail}")
 
-    # Basic sanity check against our schema expectations
     if snap.get("version") != "scene_state_v1":
         return ToolResult.failure("internal_error", f"Unexpected snapshot version: {snap.get('version')}")
 
     return ToolResult.success({"snapshot": snap})
 
 
+def tool_runtime_capabilities(_: JsonDict) -> ToolResult:
+    return ToolResult.success(runtime_capabilities())
+
+
+def tool_tools_list(_: JsonDict) -> ToolResult:
+    return ToolResult.success({"tools": tool_meta_json()})
+
+
+def tool_contract_get(params: JsonDict) -> ToolResult:
+    requested = params.get("requested_determinism", "deterministic")
+    timeout_sec = params.get("timeout_sec", 90)
+
+    if requested not in {"deterministic", "seeded", "nondeterministic"}:
+        return ToolResult.failure("invalid_input", "requested_determinism must be deterministic|seeded|nondeterministic")
+    if not isinstance(timeout_sec, int) or timeout_sec < 5 or timeout_sec > 600:
+        return ToolResult.failure("invalid_input", "timeout_sec must be an int between 5 and 600")
+
+    contract = make_contract_v0(requested_determinism=requested, timeout_sec=timeout_sec)
+    return ToolResult.success({"contract": contract})
+
+
 TOOLS: dict[str, Callable[[JsonDict], ToolResult]] = {
     "system.ping": tool_system_ping,
     "schemas.get": tool_schemas_get,
     "scene.snapshot": tool_scene_snapshot,
+    "runtime.capabilities": tool_runtime_capabilities,
+    "tools.list": tool_tools_list,
+    "contract.get": tool_contract_get,
 }
