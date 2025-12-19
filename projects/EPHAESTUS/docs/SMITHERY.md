@@ -12,7 +12,7 @@ You can drive Hephaestus without Claude Desktop by using either:
 4) In another terminal: set your endpoint/key/model, then run the client:
    - OpenAI payant :
      ```pwsh
-     $env:OPENAI_API_KEY="sk-..."
+     $env:OPENAI_API_KEY="REPLACE_ME_DO_NOT_COMMIT"
      python scripts/openai_tool_client.py
      ```
    - Gratuit/local (ollama avec API OpenAI-compatible) :
