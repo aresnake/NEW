@@ -1,0 +1,16 @@
+{
+  "successes": [
+    "crate",
+    "barrel",
+    "lamp",
+    "bench",
+    "sign",
+    "rock",
+    "tree",
+    "screenshots"
+  ],
+  "failures": [],
+  "notes": [
+    "screenshots=['D:\\\\EPHAESTUS\\\\reports\\\\shots_props\\\\props_1765991667295.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_props\\\\props_1765991667529.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_props\\\\props_1765991667756.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_props\\\\props_1765991667991.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_props\\\\props_orbit_1765991668234.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_props\\\\props_orbit_1765991668466.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_props\\\\props_orbit_1765991668767.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_props\\\\props_orbit_1765991669009.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_props\\\\props_orbit_1765991669251.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_props\\\\props_orbit_1765991669498.png']"
+  ]
+}

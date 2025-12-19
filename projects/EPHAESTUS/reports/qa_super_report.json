@@ -1,0 +1,38 @@
+{
+  "runs": [
+    {
+      "name": "vision_check",
+      "successes": [
+        "analyze_scene",
+        "analyze_screenshots",
+        "stress_modifiers",
+        "stress_modifiers_screenshots"
+      ],
+      "failures": [],
+      "notes": [
+        "analyze_dist_A_B=3.0",
+        "analyze_bbox_A={'local_min': [-1.0, -1.0, -1.0], 'local_max': [1.0, 1.0, 1.0], 'local_size': [2.0, 2.0, 2.0], 'local_center': [0.0, 0.0, 0.0], 'world_center': [0.0, 0.0, 0.0]}",
+        "analyze_shots=['D:\\\\EPHAESTUS\\\\reports\\\\shots_super\\\\vision_check\\\\analyze\\\\analyze_product_1765996963174.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_super\\\\vision_check\\\\analyze\\\\analyze_top_1765996963473.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_super\\\\vision_check\\\\analyze\\\\analyze_front_1765996963725.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_super\\\\vision_check\\\\analyze\\\\analyze_isometric_1765996963977.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_super\\\\vision_check\\\\analyze\\\\analyze_orbit_1765996964239.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_super\\\\vision_check\\\\analyze\\\\analyze_orbit_1765996964504.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_super\\\\vision_check\\\\analyze\\\\analyze_orbit_1765996964764.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_super\\\\vision_check\\\\analyze\\\\analyze_orbit_1765996964969.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_super\\\\vision_check\\\\analyze\\\\analyze_orbit_1765996965234.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_super\\\\vision_check\\\\analyze\\\\analyze_orbit_1765996965512.png']",
+        "stress_dist={'distance': 0.5197531720918314}",
+        "stress_bbox_cube={'local_min': [-0.3197530508041382, -0.8048797249794006, -0.8048797249794006], 'local_max': [0.31975317001342773, 0.8048797845840454, 0.8048797249794006], 'local_size': [0.6395062208175659, 1.6097595691680908, 1.6097594499588013], 'local_center': [5.960464477539063e-08, 2.9802322387695312e-08, 0.0], 'world_center': [-0.519753098487854, 2.9802322387695312e-08, 0.0]}",
+        "stress_modifiers_shots=['D:\\\\EPHAESTUS\\\\reports\\\\shots_super\\\\vision_check\\\\stress_modifiers\\\\stress_mods_product_1765996966002.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_super\\\\vision_check\\\\stress_modifiers\\\\stress_mods_top_1765996966255.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_super\\\\vision_check\\\\stress_modifiers\\\\stress_mods_front_1765996966503.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_super\\\\vision_check\\\\stress_modifiers\\\\stress_mods_isometric_1765996966750.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_super\\\\vision_check\\\\stress_modifiers\\\\stress_mods_orbit_1765996967011.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_super\\\\vision_check\\\\stress_modifiers\\\\stress_mods_orbit_1765996967280.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_super\\\\vision_check\\\\stress_modifiers\\\\stress_mods_orbit_1765996967489.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_super\\\\vision_check\\\\stress_modifiers\\\\stress_mods_orbit_1765996967753.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_super\\\\vision_check\\\\stress_modifiers\\\\stress_mods_orbit_1765996968025.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_super\\\\vision_check\\\\stress_modifiers\\\\stress_mods_orbit_1765996968329.png']"
+      ],
+      "missing_tools": []
+    }
+  ],
+  "modules": [
+    "analyze_light",
+    "tools_matrix_light",
+    "props_scatter",
+    "nature_basic",
+    "urban_block",
+    "mech_basic",
+    "mech_advanced2",
+    "character_blockout",
+    "stress_modifiers",
+    "scatter_surface"
+  ],
+  "scenarios": [
+    "vision_check"
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "successes": [
+    "sprockets",
+    "chain",
+    "arm",
+    "materials",
+    "lighting_camera",
+    "measurements",
+    "screenshot"
+  ],
+  "failures": [],
+  "notes": [
+    "distance_sprockets=4.0",
+    "bbox_arm_base={'local_min': [-1.0, -1.0, -1.0], 'local_max': [1.0, 1.0, 1.0], 'local_size': [2.0, 2.0, 2.0], 'local_center': [0.0, 0.0, 0.0], 'world_center': [0.0, -1.5, 0.0]}",
+    "screenshots=['C:\\\\Users\\\\adrie\\\\AppData\\\\Local\\\\Temp\\\\hephaestus_viewport.png', 'C:\\\\Users\\\\adrie\\\\AppData\\\\Local\\\\Temp\\\\hephaestus_viewport.png', 'C:\\\\Users\\\\adrie\\\\AppData\\\\Local\\\\Temp\\\\hephaestus_viewport.png', 'C:\\\\Users\\\\adrie\\\\AppData\\\\Local\\\\Temp\\\\hephaestus_viewport.png']"
+  ]
+}

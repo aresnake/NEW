@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "hephaestus-v2": {
+      "command": "C:/Users/adrie/AppData/Local/Programs/Python/Python311/python.exe",
+      "args": ["-m", "hephaestus_mcp.server"],
+      "env": {
+        "HEPHAESTUS_CONFIG": "D:/EPHAESTUS/v2/config.json"
+      }
+    }
+  }
+}

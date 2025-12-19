@@ -1,0 +1,28 @@
+{
+  "lights": [
+    {
+      "name": "Studio_Key",
+      "type": "AREA",
+      "location": [5.0, -3.0, 4.0],
+      "energy": 900.0,
+      "color": [1.0, 0.98, 0.95, 1.0],
+      "size": 3.0
+    },
+    {
+      "name": "Studio_Fill",
+      "type": "AREA",
+      "location": [-4.0, -5.0, 3.0],
+      "energy": 450.0,
+      "color": [0.9, 0.95, 1.0, 1.0],
+      "size": 3.5
+    },
+    {
+      "name": "Studio_Back",
+      "type": "AREA",
+      "location": [0.0, 6.0, 4.5],
+      "energy": 500.0,
+      "color": [1.0, 0.95, 0.9, 1.0],
+      "size": 4.0
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "lights": [
+    {
+      "name": "Soft_Key",
+      "type": "AREA",
+      "location": [4.0, -4.0, 3.0],
+      "energy": 600.0,
+      "color": [1.0, 0.98, 0.95, 1.0],
+      "size": 4.0
+    },
+    {
+      "name": "Soft_Fill",
+      "type": "AREA",
+      "location": [-3.5, -4.5, 2.5],
+      "energy": 300.0,
+      "color": [0.95, 0.97, 1.0, 1.0],
+      "size": 4.5
+    },
+    {
+      "name": "Soft_Back",
+      "type": "POINT",
+      "location": [0.0, 5.0, 3.5],
+      "energy": 200.0,
+      "color": [1.0, 0.95, 0.9, 1.0]
+    }
+  ]
+}

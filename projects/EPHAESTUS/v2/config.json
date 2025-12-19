@@ -1,0 +1,11 @@
+{
+  "bridge": {
+    "transport": "stdio",
+    "timeout_ms": 8000,
+    "retries": 1
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "hephaestus_v2.log"
+  }
+}

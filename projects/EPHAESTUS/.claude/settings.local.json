@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uvx hephaestus:*)",
+      "Bash(where:*)",
+      "Bash(python -m hephaestus.server:*)",
+      "Bash(pip show:*)",
+      "Bash(.venv\\Scripts\\python.exe:*)",
+      "Bash(.venv/Scripts/python.exe -m pip show:*)",
+      "Bash(.venv/Scripts/python.exe:*)",
+      "Bash(dir:*)",
+      "Bash(python -m pip:*)",
+      "Bash(python:*)",
+      "Bash(findstr:*)",
+      "Bash(C:UsersadrieAppDataLocalProgramsPythonPython311python.exe -c \"import sys; sys.path.insert(0, r''D:\\EPHAESTUS\\src''); from hephaestus import server; print(''Import OK''); print(''App:'', server.app)\")",
+      "Bash(timeout 5 python:*)",
+      "Bash(.venvScriptspython.exe -c \"import sys; print(sys.executable)\")",
+      "Bash(cat:*)",
+      "Bash(uv pip install:*)",
+      "Bash(.venvScriptspython.exe -m pip show mcp)",
+      "Bash(.venvScriptspython.exe -c \"import sys; sys.path.insert(0, r''D:\\EPHAESTUS\\src''); from hephaestus import server; print(''Import OK''); print(''App:'', server.app)\")",
+      "Bash(uvx:*)",
+      "Bash(ls:*)",
+      "Bash(timeout 3 uvx:*)",
+      "Bash(tasklist:*)",
+      "Bash(npx -y @modelcontextprotocol/server-blender --help)",
+      "Bash(C:/Users/adrie/AppData/Local/Programs/Python/Python311/Scripts/hephaestus.exe:*)"
+    ]
+  }
+}

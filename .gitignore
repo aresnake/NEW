@@ -18,3 +18,18 @@ Thumbs.db
 .artifacts/
 bridge/
 scripts/
+# --- local env / caches ---
+.venv/
+**/__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.log
+
+# --- OS / editors ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -1,0 +1,7 @@
+{
+  "name": "Wood",
+  "base_color": [0.4, 0.2, 0.1, 1.0],
+  "roughness": 0.7,
+  "metallic": 0.0,
+  "specular": 0.2
+}
