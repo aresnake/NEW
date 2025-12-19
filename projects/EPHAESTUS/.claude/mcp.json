@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "hephaestus": {
+      "type": "stdio",
+      "command": "C:/Users/adrie/AppData/Local/Programs/Python/Python311/Scripts/hephaestus.exe",
+      "args": [],
+      "env": {}
+    }
+  }
+}

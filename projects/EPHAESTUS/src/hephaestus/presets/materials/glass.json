@@ -1,0 +1,9 @@
+{
+  "name": "Glass",
+  "base_color": [0.95, 0.95, 0.95, 1.0],
+  "roughness": 0.0,
+  "metallic": 0.0,
+  "transmission": 1.0,
+  "ior": 1.45,
+  "specular": 0.5
+}

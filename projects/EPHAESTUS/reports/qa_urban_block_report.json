@@ -1,0 +1,16 @@
+{
+  "successes": [
+    "ground",
+    "road",
+    "inst_source",
+    "instances",
+    "lamps_scatter",
+    "align_snap",
+    "orbit_screenshots",
+    "screenshots"
+  ],
+  "failures": [],
+  "notes": [
+    "screenshots=['D:\\\\EPHAESTUS\\\\reports\\\\shots_urban_block\\\\urban_block_1765991660536.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_urban_block\\\\urban_block_1765991660860.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_urban_block\\\\urban_block_1765991661137.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_urban_block\\\\urban_block_1765991661399.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_urban_block\\\\urban_block_orbit_1765991661708.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_urban_block\\\\urban_block_orbit_1765991661984.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_urban_block\\\\urban_block_orbit_1765991662279.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_urban_block\\\\urban_block_orbit_1765991662559.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_urban_block\\\\urban_block_orbit_1765991662828.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_urban_block\\\\urban_block_orbit_1765991663094.png']"
+  ]
+}

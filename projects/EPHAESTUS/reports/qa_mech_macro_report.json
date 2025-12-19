@@ -1,0 +1,13 @@
+{
+  "successes": [
+    "mech_rig",
+    "orbit_screenshots",
+    "screenshots"
+  ],
+  "failures": [],
+  "notes": [
+    "distance_sprockets=4.0",
+    "bbox_arm_base={'local_min': [-0.4000000059604645, -0.4000000059604645, -0.5], 'local_max': [0.4000000059604645, 0.4000000059604645, 0.5], 'local_size': [0.800000011920929, 0.800000011920929, 1.0], 'local_center': [0.0, 0.0, 0.0], 'world_center': [0.0, -1.5, 0.0]}",
+    "screenshots=['D:\\\\EPHAESTUS\\\\reports\\\\shots_mech_macro\\\\mech_macro_1765991641536.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_mech_macro\\\\mech_macro_1765991641913.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_mech_macro\\\\mech_macro_1765991642101.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_mech_macro\\\\mech_macro_1765991642357.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_mech_macro\\\\mech_macro_orbit_1765991642560.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_mech_macro\\\\mech_macro_orbit_1765991642824.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_mech_macro\\\\mech_macro_orbit_1765991643025.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_mech_macro\\\\mech_macro_orbit_1765991643284.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_mech_macro\\\\mech_macro_orbit_1765991643545.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_mech_macro\\\\mech_macro_orbit_1765991643750.png']"
+  ]
+}

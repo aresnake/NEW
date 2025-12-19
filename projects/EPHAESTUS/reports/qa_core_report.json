@@ -1,0 +1,17 @@
+{
+  "successes": [
+    "clear_scene",
+    "create_collection",
+    "create_empty",
+    "child_A",
+    "child_B",
+    "set_parent",
+    "move_to_collection",
+    "duplicate_childA",
+    "delete_childB"
+  ],
+  "failures": [],
+  "notes": [
+    "objects=0, collections=None"
+  ]
+}

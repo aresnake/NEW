@@ -1,0 +1,19 @@
+{
+  "successes": [
+    "motor_core",
+    "brackets",
+    "chain_path",
+    "bolts",
+    "shading",
+    "align_snap",
+    "measurements",
+    "orbit_screenshots",
+    "screenshots"
+  ],
+  "failures": [],
+  "notes": [
+    "dist_sprockets=0.0",
+    "bbox_motor={'local_min': [-1.0, -0.800000011920929, -0.6000000238418579], 'local_max': [1.0, 0.800000011920929, 0.6000000238418579], 'local_size': [2.0, 1.600000023841858, 1.2000000476837158], 'local_center': [0.0, 0.0, 0.0], 'world_center': [0.0, 0.0, 0.0]}",
+    "screenshots=['D:\\\\EPHAESTUS\\\\reports\\\\shots_mech_advanced2\\\\mech_adv2_1765991653016.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_mech_advanced2\\\\mech_adv2_1765991653257.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_mech_advanced2\\\\mech_adv2_1765991653493.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_mech_advanced2\\\\mech_adv2_1765991653725.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_mech_advanced2\\\\mech_adv2_orbit_1765991653912.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_mech_advanced2\\\\mech_adv2_orbit_1765991654151.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_mech_advanced2\\\\mech_adv2_orbit_1765991654396.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_mech_advanced2\\\\mech_adv2_orbit_1765991654641.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_mech_advanced2\\\\mech_adv2_orbit_1765991654886.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_mech_advanced2\\\\mech_adv2_orbit_1765991655134.png']"
+  ]
+}

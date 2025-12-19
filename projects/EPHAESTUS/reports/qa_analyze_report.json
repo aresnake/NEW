@@ -1,0 +1,24 @@
+{
+  "successes": [
+    "scene_built",
+    "measure_distance_obj",
+    "measure_distance_pts",
+    "bbox_A",
+    "bbox_B",
+    "object_info_A",
+    "collection_tree",
+    "batch_select_all",
+    "orbit_screenshots",
+    "screenshot"
+  ],
+  "failures": [],
+  "notes": [
+    "dist_A_B=3.0",
+    "dist_pts=3.7416573867739413",
+    "bbox_A={'local_min': [-1.0, -1.0, -1.0], 'local_max': [1.0, 1.0, 1.0], 'local_size': [2.0, 2.0, 2.0], 'local_center': [0.0, 0.0, 0.0], 'world_center': [0.0, 0.0, 0.0]}",
+    "bbox_B={'local_min': [-1.0, -1.0, -1.0], 'local_max': [1.0, 1.0, 1.0], 'local_size': [2.0, 2.0, 2.0], 'local_center': [0.0, 0.0, 0.0], 'world_center': [3.0, 0.0, 0.0]}",
+    "object_info_A={'name': 'A', 'type': 'MESH', 'location': [0.0, 0.0, 0.0], 'rotation_euler': [0.0, 0.0, 0.0], 'scale': [1.0, 1.0, 1.0], 'dimensions': [2.0, 2.0, 2.0], 'visible': True, 'parent': None, 'children': [], 'materials': ['Mat_Analyze'], 'modifiers': []}",
+    "collection_tree={'name': 'Scene Collection', 'objects': [], 'children': [{'name': 'Collection', 'objects': ['A', 'B', 'C', 'PathAnalyze', 'Studio_Key', 'Studio_Fill', 'Studio_Back', 'CamAnalyze'], 'children': []}, {'name': 'QA_MECH_ASM', 'objects': [], 'children': []}, {'name': 'INST_SRC_BLOCK', 'objects': [], 'children': []}, {'name': 'INST_SRC_PROPS', 'objects': [], 'children': []}]}",
+    "screenshots=['D:\\\\EPHAESTUS\\\\reports\\\\shots_analyze\\\\analyze_1765991677658.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_analyze\\\\analyze_1765991677818.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_analyze\\\\analyze_1765991677970.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_analyze\\\\analyze_1765991678116.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_analyze\\\\analyze_orbit_1765991678271.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_analyze\\\\analyze_orbit_1765991678430.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_analyze\\\\analyze_orbit_1765991678591.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_analyze\\\\analyze_orbit_1765991678793.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_analyze\\\\analyze_orbit_1765991678992.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_analyze\\\\analyze_orbit_1765991679140.png']"
+  ]
+}

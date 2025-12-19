@@ -1,0 +1,14 @@
+{
+  "llm": {
+    "provider": "openai",
+    "model": "gpt-4o",
+    "api_key": "YOUR_OPENAI_API_KEY"
+  },
+  "mcpServers": {
+    "hephaestus": {
+      "command": "uvx",
+      "args": ["--from", ".", "hephaestus"],
+      "cwd": "D:\\EPHAESTUS"
+    }
+  }
+}

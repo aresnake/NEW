@@ -1,0 +1,13 @@
+{
+  "successes": [
+    "source_collection",
+    "scatter_along_curve",
+    "align_snap",
+    "orbit_screenshots",
+    "screenshots"
+  ],
+  "failures": [],
+  "notes": [
+    "screenshots=['D:\\\\EPHAESTUS\\\\reports\\\\shots_props_scatter\\\\props_scatter_1765991664259.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_props_scatter\\\\props_scatter_1765991664440.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_props_scatter\\\\props_scatter_1765991664565.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_props_scatter\\\\props_scatter_1765991664714.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_props_scatter\\\\props_scatter_orbit_1765991664878.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_props_scatter\\\\props_scatter_orbit_1765991665039.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_props_scatter\\\\props_scatter_orbit_1765991665295.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_props_scatter\\\\props_scatter_orbit_1765991665542.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_props_scatter\\\\props_scatter_orbit_1765991665782.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_props_scatter\\\\props_scatter_orbit_1765991666028.png']"
+  ]
+}

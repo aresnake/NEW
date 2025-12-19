@@ -1,0 +1,16 @@
+{
+  "successes": [
+    "blockout_parts",
+    "shading",
+    "align_snap",
+    "measurements",
+    "orbit_screenshots",
+    "screenshots"
+  ],
+  "failures": [],
+  "notes": [
+    "dist_head_body=0.0",
+    "bbox_body={'local_min': [-1.0, -1.0, -1.0], 'local_max': [1.0, 1.0, 1.0], 'local_size': [2.0, 2.0, 2.0], 'local_center': [0.0, 0.0, 0.0], 'world_center': [0.0, 0.0, 0.5]}",
+    "screenshots=['D:\\\\EPHAESTUS\\\\reports\\\\shots_character_blockout\\\\char_blockout_1765991656434.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_character_blockout\\\\char_blockout_1765991656619.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_character_blockout\\\\char_blockout_1765991656861.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_character_blockout\\\\char_blockout_1765991657101.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_character_blockout\\\\char_blockout_orbit_1765991657363.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_character_blockout\\\\char_blockout_orbit_1765991657622.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_character_blockout\\\\char_blockout_orbit_1765991657879.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_character_blockout\\\\char_blockout_orbit_1765991658155.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_character_blockout\\\\char_blockout_orbit_1765991658434.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_character_blockout\\\\char_blockout_orbit_1765991658708.png']"
+  ]
+}

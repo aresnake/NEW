@@ -1,0 +1,21 @@
+{
+  "successes": [
+    [
+      "ground",
+      true
+    ],
+    "road",
+    "Building_01",
+    "Building_02",
+    "Building_03",
+    "Building_04",
+    "Building_05",
+    "repeat_facade",
+    "scatter_lamps",
+    "screenshots"
+  ],
+  "failures": [],
+  "notes": [
+    "screenshots=['D:\\\\EPHAESTUS\\\\reports\\\\shots_urban\\\\urban_1765991675146.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_urban\\\\urban_1765991675294.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_urban\\\\urban_1765991675429.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_urban\\\\urban_1765991675580.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_urban\\\\urban_orbit_1765991675743.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_urban\\\\urban_orbit_1765991675902.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_urban\\\\urban_orbit_1765991676070.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_urban\\\\urban_orbit_1765991676234.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_urban\\\\urban_orbit_1765991676409.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_urban\\\\urban_orbit_1765991676598.png']"
+  ]
+}

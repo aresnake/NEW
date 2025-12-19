@@ -1,0 +1,20 @@
+{
+  "lights": [
+    {
+      "name": "Sunset_Sun",
+      "type": "SUN",
+      "location": [0.0, 0.0, 0.0],
+      "energy": 5.0,
+      "color": [1.0, 0.6, 0.4, 1.0],
+      "angle": 0.8
+    },
+    {
+      "name": "Sunset_Fill",
+      "type": "AREA",
+      "location": [-6.0, -6.0, 3.0],
+      "energy": 150.0,
+      "color": [0.9, 0.7, 0.8, 1.0],
+      "size": 3.0
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "successes": [
+    "ground",
+    "trees",
+    "rocks",
+    "screenshots"
+  ],
+  "failures": [],
+  "notes": [
+    "screenshots=['D:\\\\EPHAESTUS\\\\reports\\\\shots_nature\\\\nature_1765991670860.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_nature\\\\nature_1765991671112.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_nature\\\\nature_1765991671354.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_nature\\\\nature_1765991671605.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_nature\\\\nature_orbit_1765991671865.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_nature\\\\nature_orbit_1765991672125.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_nature\\\\nature_orbit_1765991672389.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_nature\\\\nature_orbit_1765991672659.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_nature\\\\nature_orbit_1765991672921.png', 'D:\\\\EPHAESTUS\\\\reports\\\\shots_nature\\\\nature_orbit_1765991673829.png']"
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Emission",
+  "base_color": [1.0, 1.0, 1.0, 1.0],
+  "emission_strength": 5.0,
+  "emission_color": [1.0, 1.0, 1.0, 1.0]
+}
