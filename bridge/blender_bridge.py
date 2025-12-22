@@ -1,39 +1,69 @@
-import contextlib
-import io
 import json
+import os
 import queue
 import sys
 import threading
+import time
+import traceback
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import bpy
 
 HOST = "127.0.0.1"
 PORT = 8765
-
-_job_queue: "queue.Queue[tuple[str, queue.Queue]]" = queue.Queue()
+EXEC_TIMEOUT = float(os.environ.get("NEW_MCP_EXEC_TIMEOUT", "10.0") or 10.0)
+_job_queue: "queue.Queue[dict]" = queue.Queue()
+_job_results: dict = {}
 _server = None
+_timer_registered = False
+_debug_stats = {"ticks": 0, "queued": 0, "executed": 0}
+_jobs_lock = threading.Lock()
 
 
-def _process_jobs():
+def _register_timer():
+    global _timer_registered
+    if _timer_registered:
+        return
+    bpy.app.timers.register(_drain_queue, first_interval=0.05, persistent=True)
+    _timer_registered = True
+    sys.stderr.write("[bridge] timer registered\n")
+    sys.stderr.flush()
+
+
+def _drain_queue():
+    _debug_stats["ticks"] += 1
+    processed = 0
+    max_per_tick = 10
+    while processed < max_per_tick:
+        try:
+            job = _job_queue.get_nowait()
+        except queue.Empty:
+            break
+        _run_job(job)
+        processed += 1
+        _debug_stats["executed"] += 1
+    return 0.05
+
+
+def _run_job(job: dict) -> None:
+    code = job.get("code", "")
     try:
-        code, result_queue = _job_queue.get_nowait()
-    except queue.Empty:
-        return 0.1
-
-    stdout_buf = io.StringIO()
-    stderr_buf = io.StringIO()
-    try:
-        local_ns = {}
-        with contextlib.redirect_stdout(stdout_buf), contextlib.redirect_stderr(stderr_buf):
-            exec(code, {"bpy": bpy}, local_ns)
-        result = local_ns.get("result")
-        result_queue.put({"ok": True, "result": result, "stdout": stdout_buf.getvalue(), "stderr": stderr_buf.getvalue()})
+        compiled = compile(code, "<mcp_exec>", "exec")
+        exec_globals = {"bpy": bpy}
+        exec_locals: dict = {}
+        exec(compiled, exec_globals, exec_locals)
+        job["ok"] = True
+        job["error"] = None
+        job["traceback"] = None
     except Exception as exc:  # noqa: BLE001
-        result_queue.put(
-            {"ok": False, "error": str(exc), "stdout": stdout_buf.getvalue(), "stderr": stderr_buf.getvalue()}
-        )
-    return 0.0
+        job["ok"] = False
+        job["error"] = str(exc)
+        job["traceback"] = traceback.format_exc()
+    finally:
+        with _jobs_lock:
+            _job_results[job["id"]] = job
+        job["done_event"].set()
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -76,6 +106,15 @@ class _Handler(BaseHTTPRequestHandler):
             }
             self._send_json(snapshot)
             return
+        if self.path == "/debug":
+            payload = {
+                "ticks": _debug_stats["ticks"],
+                "queued": _debug_stats["queued"],
+                "executed": _debug_stats["executed"],
+                "queue_size": _job_queue.qsize(),
+            }
+            self._send_json(payload)
+            return
         self._send_json({"ok": False, "error": "Not found"}, status=404)
 
     def do_POST(self):  # noqa: N802
@@ -93,15 +132,32 @@ class _Handler(BaseHTTPRequestHandler):
         if not isinstance(code, str):
             self._send_json({"ok": False, "error": "code must be a string"}, status=400)
             return
-
-        result_queue: "queue.Queue[dict]" = queue.Queue()
-        _job_queue.put((code, result_queue))
-        try:
-            result = result_queue.get(timeout=10.0)
-        except queue.Empty:
-            self._send_json({"ok": False, "error": "Timed out waiting for execution"})
+        job_id = str(uuid.uuid4())
+        job = {
+            "id": job_id,
+            "code": code,
+            "created_at": time.time(),
+            "done_event": threading.Event(),
+            "ok": None,
+            "output": "",
+            "error": None,
+            "traceback": None,
+        }
+        _job_queue.put(job)
+        _debug_stats["queued"] += 1
+        sys.stderr.write(f"[bridge] queued job {job_id}\n")
+        sys.stderr.flush()
+        done = job["done_event"].wait(timeout=EXEC_TIMEOUT)
+        if not done or job["ok"] is None:
+            self._send_json({"ok": False, "error": "Timed out waiting for execution", "id": job_id})
             return
-        self._send_json(result)
+        resp = {
+            "ok": bool(job["ok"]),
+            "error": job["error"],
+            "traceback": job["traceback"],
+            "id": job_id,
+        }
+        self._send_json(resp)
 
 
 def start_server():
@@ -111,7 +167,7 @@ def start_server():
     _server = ThreadingHTTPServer((HOST, PORT), _Handler)
     thread = threading.Thread(target=_server.serve_forever, daemon=True)
     thread.start()
-    bpy.app.timers.register(_process_jobs, persistent=True)
+    _register_timer()
     return _server
 
 
@@ -126,4 +182,5 @@ def stop_server():
 
 if __name__ == "__main__":
     start_server()
-    print(f"Blender bridge server running on http://{HOST}:{PORT}")
+    sys.stderr.write(f"[bridge] running on http://{HOST}:{PORT}\n")
+    sys.stderr.flush()

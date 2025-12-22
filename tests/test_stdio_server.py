@@ -137,10 +137,20 @@ def test_tools_call_bridge_errors_without_stdout_noise():
                 "params": {"name": "blender-snapshot", "arguments": {}},
             },
         )
+        _send(
+            proc,
+            {
+                "jsonrpc": "2.0",
+                "id": 12,
+                "method": "tools/call",
+                "params": {"name": "blender-exec", "arguments": {"code": "print('x')"}},
+            },
+        )
         lines = [_read(out_queue, timeout=1.0), _read(out_queue, timeout=1.0)]
+        lines.append(_read(out_queue, timeout=1.0))
         lines = [line for line in lines if line is not None]
-        assert len(lines) == 2, "expected two responses for tools/call"
-        for line, expected_id in zip(lines, (10, 11)):
+        assert len(lines) == 3, "expected three responses for tools/call"
+        for line, expected_id in zip(lines, (10, 11, 12)):
             msg = json.loads(line)
             assert msg.get("id") == expected_id
             assert "error" in msg

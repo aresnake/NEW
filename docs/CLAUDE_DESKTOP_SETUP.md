@@ -27,6 +27,12 @@ Add to your Claude Desktop `mcpServers`:
 
 The bridge runs an HTTP server on `127.0.0.1:8765` in a background thread and keeps Blender responsive. The MCP server works even if the bridge is down; bridge errors return JSON-RPC errors without stdout noise.
 
+Environment:
+- `NEW_MCP_EXEC_TIMEOUT`: max seconds to wait for bridge code execution (default 10.0).
+
+Debugging:
+- `GET http://127.0.0.1:8765/debug` returns timer tick/queue stats.
+
 ## Troubleshooting
 - Ensure nothing else binds `127.0.0.1:8765`; restart Blender after bridge crashes.
 - If calls fail, check OS firewall rules for Blender and port 8765.
