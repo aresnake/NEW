@@ -96,12 +96,22 @@ def test_stdio_protocol_roundtrip():
         assert "blender-ping" in names
         assert "blender-snapshot" in names
         assert "blender-add-cube" in names
+        assert "blender-add-sphere" in names
+        assert "blender-add-plane" in names
+        assert "blender-add-cone" in names
+        assert "blender-add-torus" in names
         assert "blender-move-object" in names
         assert "blender-delete-object" in names
         assert "macro-blockout" in names
         assert "blender-add-cylinder" in names
         assert "blender-scale-object" in names
         assert "blender-rotate-object" in names
+        assert "blender-duplicate-object" in names
+        assert "blender-list-objects" in names
+        assert "blender-get-object-info" in names
+        assert "blender-select-object" in names
+        assert "blender-add-camera" in names
+        assert "blender-add-light" in names
         assert "intent-resolve" in names
         assert "intent-run" in names
         assert "replay-list" in names

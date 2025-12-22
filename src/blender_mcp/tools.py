@@ -209,6 +209,68 @@ class ToolRegistry:
             self._tool_add_cylinder,
         )
         self._register(
+            "blender-add-sphere",
+            "Add a UV or ico sphere",
+            {
+                "type": "object",
+                "properties": {
+                    "type": {"type": "string"},
+                    "segments": {"type": "integer"},
+                    "rings": {"type": "integer"},
+                    "subdivisions": {"type": "integer"},
+                    "radius": {"type": "number"},
+                    "location": {"type": "array"},
+                    "name": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+            self._tool_add_sphere,
+        )
+        self._register(
+            "blender-add-plane",
+            "Add a plane",
+            {
+                "type": "object",
+                "properties": {"size": {"type": "number"}, "location": {"type": "array"}, "name": {"type": "string"}},
+                "additionalProperties": False,
+            },
+            self._tool_add_plane,
+        )
+        self._register(
+            "blender-add-cone",
+            "Add a cone",
+            {
+                "type": "object",
+                "properties": {
+                    "vertices": {"type": "integer"},
+                    "radius1": {"type": "number"},
+                    "radius2": {"type": "number"},
+                    "depth": {"type": "number"},
+                    "location": {"type": "array"},
+                    "name": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+            self._tool_add_cone,
+        )
+        self._register(
+            "blender-add-torus",
+            "Add a torus",
+            {
+                "type": "object",
+                "properties": {
+                    "major_radius": {"type": "number"},
+                    "minor_radius": {"type": "number"},
+                    "major_segments": {"type": "integer"},
+                    "minor_segments": {"type": "integer"},
+                    "location": {"type": "array"},
+                    "name": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+            self._tool_add_torus,
+        )
+        self._register(
             "blender-scale-object",
             "Scale an object uniformly or per-axis",
             {
@@ -237,6 +299,79 @@ class ToolRegistry:
                 "additionalProperties": False,
             },
             self._tool_rotate_object,
+        )
+        self._register(
+            "blender-duplicate-object",
+            "Duplicate an object",
+            {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "new_name": {"type": "string"},
+                    "offset": {"type": "array"},
+                },
+                "required": ["name"],
+                "additionalProperties": False,
+            },
+            self._tool_duplicate_object,
+        )
+        self._register(
+            "blender-list-objects",
+            "List objects in the scene",
+            {"type": "object", "properties": {}, "additionalProperties": False},
+            self._tool_list_objects,
+        )
+        self._register(
+            "blender-get-object-info",
+            "Get location/rotation/scale and materials for an object",
+            {
+                "type": "object",
+                "properties": {"name": {"type": "string"}},
+                "required": ["name"],
+                "additionalProperties": False,
+            },
+            self._tool_get_object_info,
+        )
+        self._register(
+            "blender-select-object",
+            "Select one or multiple objects",
+            {
+                "type": "object",
+                "properties": {"name": {"type": "string"}, "names": {"type": "array"}},
+                "required": [],
+                "additionalProperties": False,
+            },
+            self._tool_select_object,
+        )
+        self._register(
+            "blender-add-camera",
+            "Add a camera",
+            {
+                "type": "object",
+                "properties": {
+                    "location": {"type": "array"},
+                    "rotation": {"type": "array"},
+                    "name": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+            self._tool_add_camera,
+        )
+        self._register(
+            "blender-add-light",
+            "Add a light (point, sun, spot, area)",
+            {
+                "type": "object",
+                "properties": {
+                    "type": {"type": "string"},
+                    "location": {"type": "array"},
+                    "rotation": {"type": "array"},
+                    "power": {"type": "number"},
+                    "name": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+            self._tool_add_light,
         )
         self._register(
             "intent-resolve",
@@ -667,6 +802,329 @@ else:
         if not data.get("ok"):
             return _make_tool_result(data.get("error") or "Failed to rotate object", is_error=True)
         return _make_tool_result(f"Rotated {name} to {tuple(rot_vec)} deg ({space})", is_error=False)
+
+    def _tool_add_sphere(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        sphere_type = args.get("type", "uv")
+        segments = args.get("segments", 32)
+        rings = args.get("rings", 16)
+        subdivisions = args.get("subdivisions", 2)
+        radius = args.get("radius", 1.0)
+        location = self._validate_vector(args.get("location"), name="location") or [0.0, 0.0, 0.0]
+        name = args.get("name") or "Sphere"
+        if sphere_type not in ("uv", "ico"):
+            raise ToolError("type must be 'uv' or 'ico'", code=-32602)
+        try:
+            radius_f = float(radius)
+        except Exception:
+            raise ToolError("radius must be a number", code=-32602)
+        if sphere_type == "uv":
+            try:
+                seg_i = int(segments)
+                ring_i = int(rings)
+            except Exception:
+                raise ToolError("segments and rings must be integers", code=-32602)
+            code = f"""
+import bpy, bmesh
+mesh = bpy.data.meshes.new("UVSphere")
+bm = bmesh.new()
+bmesh.ops.create_uvsphere(bm, u_segments={seg_i}, v_segments={ring_i}, diameter={radius_f*2})
+bm.to_mesh(mesh)
+bm.free()
+obj = bpy.data.objects.new({json.dumps(name)}, mesh)
+scene = bpy.context.scene
+scene.collection.objects.link(obj)
+obj.location = ({location[0]}, {location[1]}, {location[2]})
+bpy.context.view_layer.objects.active = obj
+"""
+        else:
+            try:
+                sub_i = int(subdivisions)
+            except Exception:
+                raise ToolError("subdivisions must be an integer", code=-32602)
+            code = f"""
+import bpy, bmesh
+mesh = bpy.data.meshes.new("IcoSphere")
+bm = bmesh.new()
+bmesh.ops.create_icosphere(bm, subdivisions={sub_i}, radius={radius_f})
+bm.to_mesh(mesh)
+bm.free()
+obj = bpy.data.objects.new({json.dumps(name)}, mesh)
+scene = bpy.context.scene
+scene.collection.objects.link(obj)
+obj.location = ({location[0]}, {location[1]}, {location[2]})
+bpy.context.view_layer.objects.active = obj
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to add sphere", is_error=True)
+        return _make_tool_result(f"Added {sphere_type} sphere", is_error=False)
+
+    def _tool_add_plane(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        size = args.get("size", 2.0)
+        location = self._validate_vector(args.get("location"), name="location") or [0.0, 0.0, 0.0]
+        name = args.get("name") or "Plane"
+        try:
+            size_f = float(size)
+        except Exception:
+            raise ToolError("size must be a number", code=-32602)
+        code = f"""
+import bpy, bmesh
+mesh = bpy.data.meshes.new("Plane")
+bm = bmesh.new()
+bmesh.ops.create_grid(bm, x_segments=1, y_segments=1, size={size_f})
+bm.to_mesh(mesh)
+bm.free()
+obj = bpy.data.objects.new({json.dumps(name)}, mesh)
+scene = bpy.context.scene
+scene.collection.objects.link(obj)
+obj.location = ({location[0]}, {location[1]}, {location[2]})
+bpy.context.view_layer.objects.active = obj
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to add plane", is_error=True)
+        return _make_tool_result("Added plane", is_error=False)
+
+    def _tool_add_cone(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        vertices = args.get("vertices", 32)
+        radius1 = args.get("radius1", 1.0)
+        radius2 = args.get("radius2", 0.0)
+        depth = args.get("depth", 2.0)
+        location = self._validate_vector(args.get("location"), name="location") or [0.0, 0.0, 0.0]
+        name = args.get("name") or "Cone"
+        try:
+            vertices_i = int(vertices)
+        except Exception:
+            raise ToolError("vertices must be an integer", code=-32602)
+        try:
+            r1 = float(radius1)
+            r2 = float(radius2)
+            d = float(depth)
+        except Exception:
+            raise ToolError("radius1, radius2, depth must be numbers", code=-32602)
+        code = f"""
+import bpy, bmesh
+mesh = bpy.data.meshes.new("Cone")
+bm = bmesh.new()
+bmesh.ops.create_cone(bm, segments={vertices_i}, radius1={r1}, radius2={r2}, depth={d})
+bm.to_mesh(mesh)
+bm.free()
+obj = bpy.data.objects.new({json.dumps(name)}, mesh)
+scene = bpy.context.scene
+scene.collection.objects.link(obj)
+obj.location = ({location[0]}, {location[1]}, {location[2]})
+bpy.context.view_layer.objects.active = obj
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to add cone", is_error=True)
+        return _make_tool_result("Added cone", is_error=False)
+
+    def _tool_add_torus(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        major_radius = args.get("major_radius", 1.0)
+        minor_radius = args.get("minor_radius", 0.25)
+        major_segments = args.get("major_segments", 24)
+        minor_segments = args.get("minor_segments", 16)
+        location = self._validate_vector(args.get("location"), name="location") or [0.0, 0.0, 0.0]
+        name = args.get("name") or "Torus"
+        try:
+            maj_r = float(major_radius)
+            min_r = float(minor_radius)
+        except Exception:
+            raise ToolError("major_radius and minor_radius must be numbers", code=-32602)
+        try:
+            maj_seg = int(major_segments)
+            min_seg = int(minor_segments)
+        except Exception:
+            raise ToolError("major_segments and minor_segments must be integers", code=-32602)
+        code = f"""
+import bpy, bmesh
+mesh = bpy.data.meshes.new("Torus")
+bm = bmesh.new()
+bmesh.ops.create_torus(bm, segments_major={maj_seg}, segments_minor={min_seg}, major_radius={maj_r}, minor_radius={min_r})
+bm.to_mesh(mesh)
+bm.free()
+obj = bpy.data.objects.new({json.dumps(name)}, mesh)
+scene = bpy.context.scene
+scene.collection.objects.link(obj)
+obj.location = ({location[0]}, {location[1]}, {location[2]})
+bpy.context.view_layer.objects.active = obj
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to add torus", is_error=True)
+        return _make_tool_result("Added torus", is_error=False)
+
+    def _tool_duplicate_object(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        name = args.get("name")
+        new_name = args.get("new_name")
+        offset = self._validate_vector(args.get("offset"), name="offset") or [0.0, 0.0, 0.0]
+        if not isinstance(name, str):
+            raise ToolError("name must be a string", code=-32602)
+        if new_name is not None and not isinstance(new_name, str):
+            raise ToolError("new_name must be a string", code=-32602)
+        target_name = new_name or f"{name}_copy"
+        code = f"""
+import bpy
+name = {json.dumps(name)}
+new_name = {json.dumps(target_name)}
+offset = ({offset[0]}, {offset[1]}, {offset[2]})
+obj = bpy.data.objects.get(name)
+if obj is None:
+    raise ValueError(f"Object {{name}} not found")
+dup = obj.copy()
+dup.data = obj.data.copy()
+dup.name = new_name
+dup.location = (obj.location.x + offset[0], obj.location.y + offset[1], obj.location.z + offset[2])
+obj.users_collection[0].objects.link(dup)
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to duplicate object", is_error=True)
+        return _make_tool_result(f"Duplicated {name} -> {target_name}", is_error=False)
+
+    def _tool_list_objects(self, _: Dict[str, Any]) -> Dict[str, Any]:
+        code = """
+import bpy
+result = []
+for obj in bpy.data.objects:
+    result.append({"name": obj.name, "type": obj.type})
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to list objects", is_error=True)
+        items = data.get("result") or []
+        if isinstance(items, list):
+            names = [f"{item.get('name')} ({item.get('type')})" for item in items if isinstance(item, dict)]
+            text = ", ".join(names) if names else "no objects"
+        else:
+            text = "listed objects"
+        return _make_tool_result(text, is_error=False)
+
+    def _tool_get_object_info(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        name = args.get("name")
+        if not isinstance(name, str):
+            raise ToolError("name must be a string", code=-32602)
+        code = f"""
+import bpy
+import math
+name = {json.dumps(name)}
+obj = bpy.data.objects.get(name)
+if obj is None:
+    raise ValueError(f"Object {{name}} not found")
+result = {{
+    "name": obj.name,
+    "type": obj.type,
+    "location": [obj.location.x, obj.location.y, obj.location.z],
+    "rotation": [math.degrees(v) for v in obj.rotation_euler],
+    "scale": [obj.scale.x, obj.scale.y, obj.scale.z],
+    "materials": [m.name for m in obj.data.materials] if hasattr(obj.data, "materials") else [],
+}}
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to get object info", is_error=True)
+        info = data.get("result")
+        if isinstance(info, dict):
+            mat_list = info.get("materials") or []
+            mats = ", ".join(mat_list) if isinstance(mat_list, list) else ""
+            text = (
+                f"{info.get('name')} loc={info.get('location')} rot(deg)={info.get('rotation')} "
+                f"scale={info.get('scale')} materials={mats}"
+            )
+        else:
+            text = f"Fetched info for {name}"
+        return _make_tool_result(text, is_error=False)
+
+    def _tool_select_object(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        name = args.get("name")
+        names = args.get("names")
+        selected: List[str] = []
+        if name is not None:
+            if not isinstance(name, str):
+                raise ToolError("name must be a string", code=-32602)
+            selected.append(name)
+        if names is not None:
+            if not isinstance(names, list):
+                raise ToolError("names must be a list", code=-32602)
+            for item in names:
+                if not isinstance(item, str):
+                    raise ToolError("names entries must be strings", code=-32602)
+            selected.extend(names)
+        if not selected:
+            raise ToolError("provide name or names", code=-32602)
+        code = f"""
+import bpy
+names = {json.dumps(selected)}
+bpy.ops.object.select_all(action='DESELECT')
+found = []
+missing = []
+for nm in names:
+    obj = bpy.data.objects.get(nm)
+    if obj is None:
+        missing.append(nm)
+        continue
+    obj.select_set(True)
+    found.append(nm)
+if missing:
+    raise ValueError(f"Objects not found: {{', '.join(missing)}}")
+if found:
+    bpy.context.view_layer.objects.active = bpy.data.objects.get(found[0])
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to select objects", is_error=True)
+        return _make_tool_result(f"Selected: {', '.join(selected)}", is_error=False)
+
+    def _tool_add_camera(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        location = self._validate_vector(args.get("location"), name="location") or [0.0, 0.0, 10.0]
+        rotation = self._validate_vector(args.get("rotation"), name="rotation") or [0.0, 0.0, 0.0]
+        name = args.get("name") or "Camera"
+        if not isinstance(name, str):
+            raise ToolError("name must be a string", code=-32602)
+        code = f"""
+import bpy, math
+cam_data = bpy.data.cameras.new({json.dumps(name)})
+cam_obj = bpy.data.objects.new({json.dumps(name)}, cam_data)
+scene = bpy.context.scene
+scene.collection.objects.link(cam_obj)
+cam_obj.location = ({location[0]}, {location[1]}, {location[2]})
+cam_obj.rotation_euler = (math.radians({rotation[0]}), math.radians({rotation[1]}), math.radians({rotation[2]}))
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to add camera", is_error=True)
+        return _make_tool_result(f"Added camera {name}", is_error=False)
+
+    def _tool_add_light(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        light_type = args.get("type", "POINT").upper()
+        location = self._validate_vector(args.get("location"), name="location") or [0.0, 0.0, 2.0]
+        rotation = self._validate_vector(args.get("rotation"), name="rotation") or [0.0, 0.0, 0.0]
+        power = args.get("power", 1000.0)
+        name = args.get("name") or "Light"
+        valid_types = {"POINT", "SUN", "SPOT", "AREA"}
+        if light_type not in valid_types:
+            raise ToolError("type must be one of point, sun, spot, area", code=-32602)
+        if not isinstance(name, str):
+            raise ToolError("name must be a string", code=-32602)
+        try:
+            power_val = float(power)
+        except Exception:
+            raise ToolError("power must be a number", code=-32602)
+        code = f"""
+import bpy, math
+light_data = bpy.data.lights.new(name={json.dumps(name)}, type={json.dumps(light_type)})
+light_data.energy = {power_val}
+light_obj = bpy.data.objects.new(name={json.dumps(name)}, object_data=light_data)
+scene = bpy.context.scene
+scene.collection.objects.link(light_obj)
+light_obj.location = ({location[0]}, {location[1]}, {location[2]})
+light_obj.rotation_euler = (math.radians({rotation[0]}), math.radians({rotation[1]}), math.radians({rotation[2]}))
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to add light", is_error=True)
+        return _make_tool_result(f"Added light {name} ({light_type.lower()})", is_error=False)
 
     def _read_actions(self) -> List[Dict[str, Any]]:
         if not RUNS_FILE.exists():

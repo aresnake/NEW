@@ -67,6 +67,7 @@ def _run_job(job: dict) -> None:
         job["ok"] = True
         job["error"] = None
         job["traceback"] = None
+        job["result"] = exec_locals.get("result")
     except Exception as exc:  # noqa: BLE001
         job["ok"] = False
         job["error"] = str(exc)
@@ -161,7 +162,10 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._send_json({"ok": False, "error": "Timed out waiting for execution", "id": job_id})
             return
         if job["ok"]:
-            self._send_json({"ok": True, "id": job_id})
+            payload = {"ok": True, "id": job_id}
+            if "result" in job:
+                payload["result"] = job.get("result")
+            self._send_json(payload)
         else:
             self._send_json({"ok": False, "id": job_id, "error": job["error"], "traceback": job["traceback"]})
 

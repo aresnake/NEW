@@ -98,6 +98,20 @@ def test_blender_tools_success_with_mock_bridge():
                     "arguments": {"name": "Cube", "rotation": [0, 0, 90], "space": "world"},
                 },
             },
+            {"id": 4, "method": "tools/call", "params": {"name": "blender-add-sphere", "arguments": {}}},
+            {"id": 5, "method": "tools/call", "params": {"name": "blender-add-plane", "arguments": {}}},
+            {"id": 6, "method": "tools/call", "params": {"name": "blender-add-cone", "arguments": {}}},
+            {"id": 7, "method": "tools/call", "params": {"name": "blender-add-torus", "arguments": {}}},
+            {"id": 8, "method": "tools/call", "params": {"name": "blender-duplicate-object", "arguments": {"name": "Cube"}}},
+            {"id": 9, "method": "tools/call", "params": {"name": "blender-list-objects", "arguments": {}}},
+            {
+                "id": 10,
+                "method": "tools/call",
+                "params": {"name": "blender-get-object-info", "arguments": {"name": "Cube"}},
+            },
+            {"id": 11, "method": "tools/call", "params": {"name": "blender-select-object", "arguments": {"name": "Cube"}}},
+            {"id": 12, "method": "tools/call", "params": {"name": "blender-add-camera", "arguments": {}}},
+            {"id": 13, "method": "tools/call", "params": {"name": "blender-add-light", "arguments": {}}},
         ]
         for call in calls:
             _send(proc, {"jsonrpc": "2.0", **call})
@@ -107,6 +121,32 @@ def test_blender_tools_success_with_mock_bridge():
             result = msg.get("result")
             assert isinstance(result, dict)
             assert result.get("isError") is False
+    finally:
+        _cleanup(proc, server)
+
+
+def test_blender_tools_arg_errors():
+    server, url = _start_mock_bridge()
+    proc = _start_server(url)
+    try:
+        bad_calls = [
+            {"id": 20, "name": "blender-scale-object", "arguments": {"name": "Cube", "uniform": "nope"}},
+            {"id": 21, "name": "blender-rotate-object", "arguments": {"name": "Cube", "rotation": [0, 0]}},
+            {"id": 22, "name": "blender-duplicate-object", "arguments": {"name": 123}},
+            {"id": 23, "name": "blender-add-light", "arguments": {"type": "laser"}},
+            {"id": 24, "name": "blender-select-object", "arguments": {}},
+        ]
+        for call in bad_calls:
+            _send(
+                proc,
+                {"jsonrpc": "2.0", "id": call["id"], "method": "tools/call", "params": {"name": call["name"], "arguments": call["arguments"]}},
+            )
+            line = _read(proc, timeout=1.0)
+            assert line is not None
+            msg = json.loads(line)
+            result = msg.get("result")
+            assert isinstance(result, dict)
+            assert result.get("isError") is True
     finally:
         _cleanup(proc, server)
 

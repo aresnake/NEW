@@ -16,9 +16,19 @@ Add to your Claude Desktop `mcpServers`:
 - `blender-exec` (debug)
 - `blender-add-cube`
 - `blender-add-cylinder`
+- `blender-add-sphere`
+- `blender-add-plane`
+- `blender-add-cone`
+- `blender-add-torus`
 - `blender-move-object`
 - `blender-scale-object`
 - `blender-rotate-object`
+- `blender-duplicate-object`
+- `blender-list-objects`
+- `blender-get-object-info`
+- `blender-select-object`
+- `blender-add-camera`
+- `blender-add-light`
 - `blender-delete-object`
 - `blender-join-objects`
 - `blender-set-origin`
@@ -122,6 +132,46 @@ Examples:
 - blender-rename-object:
   ```json
   {"jsonrpc":"2.0","id":26,"method":"tools/call","params":{"name":"blender-rename-object","arguments":{"old_name":"Cube","new_name":"Box"}}}
+  ```
+- blender-add-sphere:
+  ```json
+  {"jsonrpc":"2.0","id":27,"method":"tools/call","params":{"name":"blender-add-sphere","arguments":{"type":"uv","segments":32,"rings":16,"radius":1.0,"location":[0,0,0],"name":"MySphere"}}}
+  ```
+- blender-add-plane:
+  ```json
+  {"jsonrpc":"2.0","id":28,"method":"tools/call","params":{"name":"blender-add-plane","arguments":{"size":2.0,"location":[0,0,0],"name":"MyPlane"}}}
+  ```
+- blender-add-cone:
+  ```json
+  {"jsonrpc":"2.0","id":29,"method":"tools/call","params":{"name":"blender-add-cone","arguments":{"vertices":32,"radius1":1.0,"radius2":0.0,"depth":2.0,"location":[0,0,0],"name":"MyCone"}}}
+  ```
+- blender-add-torus:
+  ```json
+  {"jsonrpc":"2.0","id":30,"method":"tools/call","params":{"name":"blender-add-torus","arguments":{"major_radius":1.0,"minor_radius":0.25,"major_segments":24,"minor_segments":16,"location":[0,0,0],"name":"MyTorus"}}}
+  ```
+- blender-duplicate-object:
+  ```json
+  {"jsonrpc":"2.0","id":31,"method":"tools/call","params":{"name":"blender-duplicate-object","arguments":{"name":"Cube","new_name":"Cube_copy","offset":[1,0,0]}}}
+  ```
+- blender-list-objects:
+  ```json
+  {"jsonrpc":"2.0","id":32,"method":"tools/call","params":{"name":"blender-list-objects","arguments":{}}}
+  ```
+- blender-get-object-info:
+  ```json
+  {"jsonrpc":"2.0","id":33,"method":"tools/call","params":{"name":"blender-get-object-info","arguments":{"name":"Cube"}}}
+  ```
+- blender-select-object:
+  ```json
+  {"jsonrpc":"2.0","id":34,"method":"tools/call","params":{"name":"blender-select-object","arguments":{"names":["Cube","Sphere"]}}}
+  ```
+- blender-add-camera:
+  ```json
+  {"jsonrpc":"2.0","id":35,"method":"tools/call","params":{"name":"blender-add-camera","arguments":{"location":[0,0,10],"rotation":[-90,0,0],"name":"Cam"}}}
+  ```
+- blender-add-light:
+  ```json
+  {"jsonrpc":"2.0","id":36,"method":"tools/call","params":{"name":"blender-add-light","arguments":{"type":"sun","power":2.0,"location":[0,0,5],"rotation":[-45,0,0],"name":"KeyLight"}}}
   ```
 
 Debugging:
