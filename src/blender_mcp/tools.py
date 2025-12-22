@@ -193,6 +193,52 @@ class ToolRegistry:
             self._tool_macro_blockout,
         )
         self._register(
+            "blender-add-cylinder",
+            "Add a low-poly cylinder",
+            {
+                "type": "object",
+                "properties": {
+                    "vertices": {"type": "integer"},
+                    "radius": {"type": "number"},
+                    "depth": {"type": "number"},
+                    "location": {"type": "array"},
+                    "name": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+            self._tool_add_cylinder,
+        )
+        self._register(
+            "blender-scale-object",
+            "Scale an object uniformly or per-axis",
+            {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "scale": {"type": "array"},
+                    "uniform": {"type": "number"},
+                },
+                "required": ["name"],
+                "additionalProperties": False,
+            },
+            self._tool_scale_object,
+        )
+        self._register(
+            "blender-rotate-object",
+            "Rotate an object in degrees",
+            {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "rotation": {"type": "array"},
+                    "space": {"type": "string"},
+                },
+                "required": ["name", "rotation"],
+                "additionalProperties": False,
+            },
+            self._tool_rotate_object,
+        )
+        self._register(
             "intent-resolve",
             "Resolve natural text to a tool call",
             {
@@ -425,7 +471,115 @@ bpy.context.view_layer.objects.active = obj
         data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
         if not data.get("ok"):
             return _make_tool_result(data.get("error") or "Failed to create blockout", is_error=True)
-            return _make_tool_result("Blockout cube created, scaled to (2,1,1) at origin")
+        return _make_tool_result("Blockout cube created, scaled to (2,1,1) at origin")
+
+    def _validate_vector(self, value: Any, *, name: str) -> Optional[List[float]]:
+        if value is None:
+            return None
+        if not isinstance(value, list) or len(value) != 3:
+            raise ToolError(f"{name} must be an array of 3 numbers", code=-32602)
+        out: List[float] = []
+        for v in value:
+            try:
+                out.append(float(v))
+            except (TypeError, ValueError):
+                raise ToolError(f"{name} must be an array of 3 numbers", code=-32602)
+        return out
+
+    def _tool_add_cylinder(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        vertices = args.get("vertices", 16)
+        radius = args.get("radius", 1.0)
+        depth = args.get("depth", 2.0)
+        location = self._validate_vector(args.get("location"), name="location") or [0.0, 0.0, 0.0]
+        name = args.get("name")
+        try:
+            vertices_i = int(vertices)
+        except Exception:
+            raise ToolError("vertices must be an integer", code=-32602)
+        try:
+            radius_f = float(radius)
+            depth_f = float(depth)
+        except Exception:
+            raise ToolError("radius and depth must be numbers", code=-32602)
+        if name is not None and not isinstance(name, str):
+            raise ToolError("name must be a string", code=-32602)
+        code = f"""
+import bpy
+import bmesh
+mesh = bpy.data.meshes.new("Cylinder")
+bm = bmesh.new()
+bmesh.ops.create_circle(bm, segments={vertices_i}, radius={radius_f}, cap_ends=True)
+bmesh.ops.extrude_edge_only(bm, edges=bm.edges)
+bmesh.ops.translate(bm, verts=[v for v in bm.verts if v.co.z > 0], vec=(0,0,{depth_f}))
+bm.to_mesh(mesh)
+bm.free()
+obj = bpy.data.objects.new({json.dumps(name or "Cylinder")}, mesh)
+scene = bpy.context.scene
+scene.collection.objects.link(obj)
+obj.location = ({location[0]}, {location[1]}, {location[2]})
+bpy.context.view_layer.objects.active = obj
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to add cylinder", is_error=True)
+        return _make_tool_result("Added cylinder", is_error=False)
+
+    def _tool_scale_object(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        name = args.get("name")
+        scale = args.get("scale")
+        uniform = args.get("uniform")
+        if not isinstance(name, str):
+            raise ToolError("name must be a string", code=-32602)
+        vec = None
+        if uniform is not None:
+            try:
+                val = float(uniform)
+            except (TypeError, ValueError):
+                raise ToolError("uniform must be a number", code=-32602)
+            vec = [val, val, val]
+        elif scale is not None:
+            vec = self._validate_vector(scale, name="scale")
+        if vec is None:
+            raise ToolError("provide uniform or scale", code=-32602)
+        code = f"""
+import bpy
+name = {json.dumps(name)}
+obj = bpy.data.objects.get(name)
+if obj is None:
+    raise ValueError(f"Object {{name}} not found")
+obj.scale = ({vec[0]}, {vec[1]}, {vec[2]})
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to scale object", is_error=True)
+        return _make_tool_result(f"Scaled {name} to {tuple(vec)}", is_error=False)
+
+    def _tool_rotate_object(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        name = args.get("name")
+        rotation = args.get("rotation")
+        space = args.get("space", "world")
+        if not isinstance(name, str):
+            raise ToolError("name must be a string", code=-32602)
+        rot_vec = self._validate_vector(rotation, name="rotation")
+        if space not in ("world", "local"):
+            raise ToolError("space must be 'world' or 'local'", code=-32602)
+        code = f"""
+import bpy, math
+name = {json.dumps(name)}
+obj = bpy.data.objects.get(name)
+if obj is None:
+    raise ValueError(f"Object {{name}} not found")
+rx, ry, rz = ({rot_vec[0]}, {rot_vec[1]}, {rot_vec[2]})
+rad = (math.radians(rx), math.radians(ry), math.radians(rz))
+if {json.dumps(space)} == "world":
+    obj.rotation_euler = rad
+else:
+    obj.rotation_euler = rad
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to rotate object", is_error=True)
+        return _make_tool_result(f"Rotated {name} to {tuple(rot_vec)} deg ({space})", is_error=False)
 
     def _read_actions(self) -> List[Dict[str, Any]]:
         if not RUNS_FILE.exists():

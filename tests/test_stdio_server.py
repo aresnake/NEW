@@ -99,6 +99,9 @@ def test_stdio_protocol_roundtrip():
         assert "blender-move-object" in names
         assert "blender-delete-object" in names
         assert "macro-blockout" in names
+        assert "blender-add-cylinder" in names
+        assert "blender-scale-object" in names
+        assert "blender-rotate-object" in names
         assert "intent-resolve" in names
         assert "intent-run" in names
         assert "replay-list" in names
@@ -200,12 +203,22 @@ def test_tools_call_bridge_errors_without_stdout_noise():
                 "params": {"name": "intent-run", "arguments": {"text": "add cube"}},
             },
         )
+        _send(
+            proc,
+            {
+                "jsonrpc": "2.0",
+                "id": 14,
+                "method": "tools/call",
+                "params": {"name": "blender-add-cylinder", "arguments": {}},
+            },
+        )
         lines = [_read(out_queue, timeout=1.0), _read(out_queue, timeout=1.0)]
         lines.append(_read(out_queue, timeout=1.0))
         lines.append(_read(out_queue, timeout=1.0))
+        lines.append(_read(out_queue, timeout=1.0))
         lines = [line for line in lines if line is not None]
-        assert len(lines) == 4, "expected four responses for tools/call"
-        for line, expected_id in zip(lines, (10, 11, 12, 13)):
+        assert len(lines) == 5, "expected five responses for tools/call"
+        for line, expected_id in zip(lines, (10, 11, 12, 13, 14)):
             msg = json.loads(line)
             assert msg.get("id") == expected_id
             result = msg.get("result")

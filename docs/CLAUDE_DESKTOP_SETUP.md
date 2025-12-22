@@ -15,7 +15,10 @@ Add to your Claude Desktop `mcpServers`:
 - `blender-snapshot`
 - `blender-exec` (debug)
 - `blender-add-cube`
+- `blender-add-cylinder`
 - `blender-move-object`
+- `blender-scale-object`
+- `blender-rotate-object`
 - `blender-delete-object`
 - `macro-blockout`
 - `intent-resolve`
@@ -77,6 +80,18 @@ Examples:
 - tool-request:
   ```json
   {"jsonrpc":"2.0","id":17,"method":"tools/call","params":{"name":"tool-request","arguments":{"session":"<session-id>","need":"boolean toggle","why":"not available yet"}}}
+  ```
+- blender-add-cylinder:
+  ```json
+  {"jsonrpc":"2.0","id":18,"method":"tools/call","params":{"name":"blender-add-cylinder","arguments":{"vertices":16,"radius":1.0,"depth":2.0,"location":[0,0,0],"name":"MyCylinder"}}}
+  ```
+- blender-scale-object:
+  ```json
+  {"jsonrpc":"2.0","id":19,"method":"tools/call","params":{"name":"blender-scale-object","arguments":{"name":"Cube","uniform":1.5}}}
+  ```
+- blender-rotate-object:
+  ```json
+  {"jsonrpc":"2.0","id":20,"method":"tools/call","params":{"name":"blender-rotate-object","arguments":{"name":"Cube","rotation":[0,0,90],"space":"world"}}}
   ```
 
 Debugging:
