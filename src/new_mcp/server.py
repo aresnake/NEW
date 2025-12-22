@@ -79,7 +79,8 @@ class StdioServer:
                 return make_result(request_id, result)
 
             if method == "tools/list":
-                return make_result(request_id, self.tools.list_tools())
+                tools = self.tools.list_tools()
+                return make_result(request_id, {"tools": tools})
 
             if method == "tools/call":
                 params = params_obj

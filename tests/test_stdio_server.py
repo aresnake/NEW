@@ -85,7 +85,11 @@ def test_stdio_protocol_roundtrip():
         list_line = _read(out_queue, timeout=1.0)
         assert list_line is not None, "tools/list response missing"
         list_resp = json.loads(list_line)
-        names = {tool["name"] for tool in list_resp.get("result", [])}
+        list_result = list_resp.get("result")
+        assert isinstance(list_result, dict), "tools/list result should be an object"
+        tools = list_result.get("tools")
+        assert isinstance(tools, list), "tools should be a list"
+        names = {tool["name"] for tool in tools}
         assert "health" in names
         assert "echo" in names
 
