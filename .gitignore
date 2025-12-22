@@ -14,3 +14,7 @@ runs/
 # Local Claude Desktop / Claude Code settings
 .claude/
 
+
+# Windows reserved device
+nul
+
