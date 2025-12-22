@@ -6,13 +6,13 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
-BRIDGE_URL = os.environ.get("BLENDER_MCP_BRIDGE_URL", "http://127.0.0.1:8765")
+BRIDGE_URL = os.environ.get("BLENDER_MCP_BRIDGE_URL") or os.environ.get("NEW_MCP_BRIDGE_URL", "http://127.0.0.1:8765")
 SERVER_VERSION = "0.1.0"
 NAME_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 
 
 def _get_timeout(default: float) -> float:
-    env_val = os.environ.get("BLENDER_MCP_BRIDGE_TIMEOUT")
+    env_val = os.environ.get("BLENDER_MCP_BRIDGE_TIMEOUT") or os.environ.get("NEW_MCP_BRIDGE_TIMEOUT")
     if env_val is None:
         return default
     try:
@@ -102,6 +102,45 @@ class ToolRegistry:
             },
             self._tool_blender_exec,
         )
+        self._register(
+            "blender-add-cube",
+            "Add a cube at the origin",
+            {"type": "object", "properties": {}, "additionalProperties": False},
+            self._tool_add_cube,
+        )
+        self._register(
+            "blender-move-object",
+            "Move an object to (x,y,z)",
+            {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "x": {"type": "number"},
+                    "y": {"type": "number"},
+                    "z": {"type": "number"},
+                },
+                "required": ["name", "x", "y", "z"],
+                "additionalProperties": False,
+            },
+            self._tool_move_object,
+        )
+        self._register(
+            "blender-delete-object",
+            "Delete an object by name",
+            {
+                "type": "object",
+                "properties": {"name": {"type": "string"}},
+                "required": ["name"],
+                "additionalProperties": False,
+            },
+            self._tool_delete_object,
+        )
+        self._register(
+            "macro-blockout",
+            "Create a blockout cube scaled to (2,1,1) at origin",
+            {"type": "object", "properties": {}, "additionalProperties": False},
+            self._tool_macro_blockout,
+        )
 
     def list_tools(self) -> List[Dict[str, Any]]:
         return [
@@ -145,5 +184,87 @@ class ToolRegistry:
         data = _bridge_request("/exec", payload=payload, timeout=10.0)
         ok = bool(data.get("ok"))
         if not ok:
-            raise ToolError(data.get("error") or "Execution failed")
+            return _make_tool_result(data.get("error") or "Execution failed", is_error=True)
         return _make_tool_result("execution ok")
+
+    def _tool_add_cube(self, _: Dict[str, Any]) -> Dict[str, Any]:
+        code = """
+import bpy, bmesh
+mesh = bpy.data.meshes.new("Cube")
+bm = bmesh.new()
+bmesh.ops.create_cube(bm, size=2.0)
+bm.to_mesh(mesh)
+bm.free()
+obj = bpy.data.objects.new("Cube", mesh)
+scene = bpy.context.scene
+scene.collection.objects.link(obj)
+obj.location = (0.0, 0.0, 0.0)
+bpy.context.view_layer.objects.active = obj
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to add cube", is_error=True)
+        return _make_tool_result("Added cube at origin")
+
+    def _tool_move_object(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        name = args.get("name")
+        x, y, z = args.get("x"), args.get("y"), args.get("z")
+        if not isinstance(name, str):
+            raise ToolError("name must be a string", code=-32602)
+        try:
+            xf, yf, zf = float(x), float(y), float(z)
+        except (TypeError, ValueError):
+            raise ToolError("x, y, z must be numbers", code=-32602)
+        code = f"""
+import bpy
+name = {json.dumps(name)}
+obj = bpy.data.objects.get(name)
+if obj is None:
+    raise ValueError(f"Object {{name}} not found")
+obj.location = ({xf}, {yf}, {zf})
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to move object", is_error=True)
+        return _make_tool_result(f"Moved {name} to ({xf}, {yf}, {zf})")
+
+    def _tool_delete_object(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        name = args.get("name")
+        if not isinstance(name, str):
+            raise ToolError("name must be a string", code=-32602)
+        code = f"""
+import bpy
+name = {json.dumps(name)}
+obj = bpy.data.objects.get(name)
+if obj is None:
+    raise ValueError(f"Object {{name}} not found")
+bpy.data.objects.remove(obj, do_unlink=True)
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to delete object", is_error=True)
+        return _make_tool_result(f"Deleted object {name}")
+
+    def _tool_macro_blockout(self, _: Dict[str, Any]) -> Dict[str, Any]:
+        code = """
+import bpy, bmesh
+name = "BlockoutCube"
+existing = bpy.data.objects.get(name)
+if existing:
+    bpy.data.objects.remove(existing, do_unlink=True)
+mesh = bpy.data.meshes.new(name)
+bm = bmesh.new()
+bmesh.ops.create_cube(bm, size=2.0)
+bm.to_mesh(mesh)
+bm.free()
+obj = bpy.data.objects.new(name, mesh)
+scene = bpy.context.scene
+scene.collection.objects.link(obj)
+obj.scale = (2.0, 1.0, 1.0)
+obj.location = (0.0, 0.0, 0.0)
+bpy.context.view_layer.objects.active = obj
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to create blockout", is_error=True)
+        return _make_tool_result("Blockout cube created, scaled to (2,1,1) at origin")

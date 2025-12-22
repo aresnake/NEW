@@ -97,7 +97,9 @@ class StdioServer:
 
             return make_error(request_id, -32601, "Method not found")
         except ToolError as exc:
-            return make_error(request_id, exc.code, str(exc), data=exc.data or None)
+            message = str(exc)
+            result = {"content": [{"type": "text", "text": message}], "isError": True}
+            return make_result(request_id, result)
         except Exception:
             self._log_exception()
             return make_error(request_id, -32000, "Internal error")

@@ -95,6 +95,10 @@ def test_stdio_protocol_roundtrip():
         assert "health" in names
         assert "blender-ping" in names
         assert "blender-snapshot" in names
+        assert "blender-add-cube" in names
+        assert "blender-move-object" in names
+        assert "blender-delete-object" in names
+        assert "macro-blockout" in names
         for tool in tools:
             assert NAME_PATTERN.match(tool["name"]), f"tool name fails regex: {tool['name']}"
 
@@ -153,8 +157,10 @@ def test_tools_call_bridge_errors_without_stdout_noise():
         for line, expected_id in zip(lines, (10, 11, 12)):
             msg = json.loads(line)
             assert msg.get("id") == expected_id
-            assert "error" in msg
-            assert msg["error"]["code"] == -32000
+            result = msg.get("result")
+            assert isinstance(result, dict)
+            assert result.get("isError") is True
+            assert isinstance(result.get("content"), list)
 
         # Send notification and ensure no output follows
         _send(proc, {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}})

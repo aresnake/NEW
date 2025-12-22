@@ -14,6 +14,10 @@ Add to your Claude Desktop `mcpServers`:
 - `blender-ping`
 - `blender-snapshot`
 - `blender-exec` (debug)
+- `blender-add-cube`
+- `blender-move-object`
+- `blender-delete-object`
+- `macro-blockout`
 
 ## Run the Blender bridge (background HTTP server)
 - Blender UI:
@@ -29,6 +33,8 @@ The bridge runs an HTTP server on `127.0.0.1:8765` in a background thread and ke
 
 Environment:
 - `NEW_MCP_EXEC_TIMEOUT`: max seconds to wait for bridge code execution (default 10.0).
+- `NEW_MCP_BRIDGE_URL`/`BLENDER_MCP_BRIDGE_URL`: bridge base URL (default http://127.0.0.1:8765)
+- `NEW_MCP_BRIDGE_TIMEOUT`/`BLENDER_MCP_BRIDGE_TIMEOUT`: bridge HTTP timeout in seconds.
 
 Debugging:
 - `GET http://127.0.0.1:8765/debug` returns timer tick/queue stats.
