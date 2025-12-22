@@ -10,3 +10,7 @@ src/**/__pycache__/
 # Runtime logs
 runs/
 
+
+# Local Claude Desktop / Claude Code settings
+.claude/
+
