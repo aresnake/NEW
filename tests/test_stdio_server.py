@@ -99,6 +99,8 @@ def test_stdio_protocol_roundtrip():
         assert "blender-move-object" in names
         assert "blender-delete-object" in names
         assert "macro-blockout" in names
+        assert "intent-resolve" in names
+        assert "intent-run" in names
         for tool in tools:
             assert NAME_PATTERN.match(tool["name"]), f"tool name fails regex: {tool['name']}"
 
@@ -114,6 +116,39 @@ def test_stdio_protocol_roundtrip():
 
         time.sleep(0.1)
         assert _read(out_queue, timeout=0.2) is None, "unexpected extra output on stdout"
+    finally:
+        if proc.stdin:
+            proc.stdin.close()
+        try:
+            proc.wait(timeout=1.0)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+
+def test_intent_resolve_parses_move():
+    proc, out_queue = _start_server()
+    try:
+        _send(
+            proc,
+            {
+                "jsonrpc": "2.0",
+                "id": 20,
+                "method": "tools/call",
+                "params": {"name": "intent-resolve", "arguments": {"text": "move cube 1 2 3"}},
+            },
+        )
+        line = _read(out_queue, timeout=1.0)
+        assert line is not None
+        msg = json.loads(line)
+        result = msg.get("result")
+        assert isinstance(result, dict)
+        content = result.get("content")
+        assert isinstance(content, list)
+        resolved = json.loads(content[0]["text"])
+        assert resolved["tool"] == "blender-move-object"
+        assert resolved["arguments"]["x"] == 1
+        assert resolved["arguments"]["y"] == 2
+        assert resolved["arguments"]["z"] == 3
     finally:
         if proc.stdin:
             proc.stdin.close()
@@ -150,11 +185,21 @@ def test_tools_call_bridge_errors_without_stdout_noise():
                 "params": {"name": "blender-exec", "arguments": {"code": "print('x')"}},
             },
         )
+        _send(
+            proc,
+            {
+                "jsonrpc": "2.0",
+                "id": 13,
+                "method": "tools/call",
+                "params": {"name": "intent-run", "arguments": {"text": "add cube"}},
+            },
+        )
         lines = [_read(out_queue, timeout=1.0), _read(out_queue, timeout=1.0)]
         lines.append(_read(out_queue, timeout=1.0))
+        lines.append(_read(out_queue, timeout=1.0))
         lines = [line for line in lines if line is not None]
-        assert len(lines) == 3, "expected three responses for tools/call"
-        for line, expected_id in zip(lines, (10, 11, 12)):
+        assert len(lines) == 4, "expected four responses for tools/call"
+        for line, expected_id in zip(lines, (10, 11, 12, 13)):
             msg = json.loads(line)
             assert msg.get("id") == expected_id
             result = msg.get("result")

@@ -9,6 +9,7 @@ from typing import Any, Callable, Dict, List, Optional
 BRIDGE_URL = os.environ.get("BLENDER_MCP_BRIDGE_URL") or os.environ.get("NEW_MCP_BRIDGE_URL", "http://127.0.0.1:8765")
 SERVER_VERSION = "0.1.0"
 NAME_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
+DEBUG_EXEC_ENABLED = os.environ.get("BLENDER_MCP_DEBUG_EXEC") == "1" or os.environ.get("NEW_MCP_DEBUG_EXEC") == "1"
 
 
 def _get_timeout(default: float) -> float:
@@ -141,6 +142,28 @@ class ToolRegistry:
             {"type": "object", "properties": {}, "additionalProperties": False},
             self._tool_macro_blockout,
         )
+        self._register(
+            "intent-resolve",
+            "Resolve natural text to a tool call",
+            {
+                "type": "object",
+                "properties": {"text": {"type": "string"}},
+                "required": ["text"],
+                "additionalProperties": False,
+            },
+            self._tool_intent_resolve,
+        )
+        self._register(
+            "intent-run",
+            "Resolve natural text and run the resolved tool",
+            {
+                "type": "object",
+                "properties": {"text": {"type": "string"}},
+                "required": ["text"],
+                "additionalProperties": False,
+            },
+            self._tool_intent_run,
+        )
 
     def list_tools(self) -> List[Dict[str, Any]]:
         return [
@@ -175,6 +198,8 @@ class ToolRegistry:
         return _make_tool_result(f"scene: {scene}, objects: {count}")
 
     def _tool_blender_exec(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        if not DEBUG_EXEC_ENABLED:
+            return _make_tool_result("debug exec disabled", is_error=True)
         code = args.get("code", "")
         if not isinstance(code, str):
             raise ToolError("code must be a string", code=-32602)
@@ -268,3 +293,66 @@ bpy.context.view_layer.objects.active = obj
         if not data.get("ok"):
             return _make_tool_result(data.get("error") or "Failed to create blockout", is_error=True)
         return _make_tool_result("Blockout cube created, scaled to (2,1,1) at origin")
+
+    def _resolve_intent(self, text: str) -> Dict[str, Any]:
+        if not isinstance(text, str):
+            raise ToolError("text must be a string", code=-32602)
+        normalized = text.strip().lower()
+        if not normalized:
+            raise ToolError("text is empty", code=-32602)
+
+        def result(tool: str, arguments: Dict[str, Any], confidence: float, notes: str) -> Dict[str, Any]:
+            return {"tool": tool, "arguments": arguments, "confidence": confidence, "notes": notes}
+
+        # exec path, gated by env and prefix
+        if normalized.startswith("exec:"):
+            if not DEBUG_EXEC_ENABLED:
+                raise ToolError("debug exec disabled", code=-32602)
+            code = text[text.lower().find("exec:") + len("exec:") :].strip()
+            if not code:
+                raise ToolError("exec code missing", code=-32602)
+            return result("blender-exec", {"code": code}, 0.9, "explicit exec request")
+
+        cube_patterns = ("add cube", "ajoute un cube", "create cube")
+        if any(pat in normalized for pat in cube_patterns):
+            return result("blender-add-cube", {}, 0.9, "cube creation intent")
+
+        if normalized.startswith("move cube") or normalized.startswith("deplace cube") or normalized.startswith("déplace cube"):
+            parts = normalized.split()
+            try:
+                numbers = [float(val) for val in parts[-3:]]
+            except Exception:
+                raise ToolError("move requires x y z numbers", code=-32602)
+            if len(numbers) != 3:
+                raise ToolError("move requires x y z numbers", code=-32602)
+            x, y, z = numbers
+            return result("blender-move-object", {"name": "Cube", "x": x, "y": y, "z": z}, 0.8, "move cube intent")
+
+        delete_patterns = ("delete cube", "supprime cube", "remove cube")
+        if any(pat in normalized for pat in delete_patterns):
+            return result("blender-delete-object", {"name": "Cube"}, 0.8, "delete cube intent")
+
+        if "blockout" in normalized or "macro blockout" in normalized:
+            return result("macro-blockout", {}, 0.8, "blockout intent")
+
+        raise ToolError("intent not recognized", code=-32602)
+
+    def _tool_intent_resolve(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        intent_text = args.get("text")
+        resolved = self._resolve_intent(intent_text)
+        return _make_tool_result(json.dumps(resolved), is_error=False)
+
+    def _tool_intent_run(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        intent_text = args.get("text")
+        try:
+            resolved = self._resolve_intent(intent_text)
+        except ToolError as exc:
+            return _make_tool_result(str(exc), is_error=True)
+        tool = resolved.get("tool")
+        arguments = resolved.get("arguments") or {}
+        if tool not in self._tools or tool in ("intent-run", "intent-resolve"):
+            return _make_tool_result("resolved tool not available", is_error=True)
+        try:
+            return self.call_tool(tool, arguments)
+        except ToolError as exc:
+            return _make_tool_result(str(exc), is_error=True)
