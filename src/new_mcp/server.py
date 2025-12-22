@@ -1,4 +1,5 @@
 import sys
+import traceback
 from typing import Any, Dict, Optional
 
 from .protocol import PROTOCOL_VERSION, make_error, make_result, parse_message, serialize_message
@@ -21,6 +22,13 @@ class StdioServer:
         except Exception:
             pass
 
+    def _log_exception(self) -> None:
+        try:
+            traceback.print_exc(file=self._stderr)
+            self._stderr.flush()
+        except Exception:
+            pass
+
     def run(self) -> None:
         while True:
             line = self._stdin.readline()
@@ -36,6 +44,7 @@ class StdioServer:
                 self._stdout.flush()
             except Exception as exc:
                 self._log_error(f"Failed to write response: {exc}")
+                self._log_exception()
                 break
 
     def _handle_line(self, line: str) -> Optional[Dict[str, Any]]:
@@ -46,6 +55,13 @@ class StdioServer:
 
         method = message.get("method")
         request_id = message.get("id")
+        raw_params = message.get("params")
+        if raw_params is None:
+            params_obj: Dict[str, Any] = {}
+        elif isinstance(raw_params, dict):
+            params_obj = raw_params
+        else:
+            return make_error(request_id, -32602, "Invalid params")
 
         # Notifications have no id and produce no response
         if request_id is None:
@@ -66,9 +82,13 @@ class StdioServer:
                 return make_result(request_id, self.tools.list_tools())
 
             if method == "tools/call":
-                params = message.get("params") or {}
+                params = params_obj
                 name = params.get("name")
                 arguments = params.get("arguments") or {}
+                if not isinstance(params, dict):
+                    return make_error(request_id, -32602, "Invalid params")
+                if not isinstance(arguments, dict):
+                    raise ToolError("Invalid arguments", code=-32602)
                 if not isinstance(name, str):
                     raise ToolError("Invalid tool name", code=-32602)
                 result = self.tools.call_tool(name, arguments)
@@ -77,6 +97,6 @@ class StdioServer:
             return make_error(request_id, -32601, "Method not found")
         except ToolError as exc:
             return make_error(request_id, exc.code, str(exc), data=exc.data or None)
-        except Exception as exc:
-            self._log_error(f"Unhandled error: {exc}")
+        except Exception:
+            self._log_exception()
             return make_error(request_id, -32000, "Internal error")

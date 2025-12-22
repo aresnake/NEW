@@ -126,8 +126,4 @@ def stop_server():
 
 if __name__ == "__main__":
     start_server()
-    try:
-        print(f"Blender bridge server running on http://{HOST}:{PORT}")
-        threading.Event().wait()
-    except KeyboardInterrupt:
-        stop_server()
+    print(f"Blender bridge server running on http://{HOST}:{PORT}")

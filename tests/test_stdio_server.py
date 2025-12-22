@@ -1,4 +1,5 @@
 import json
+import os
 import queue
 import subprocess
 import sys
@@ -11,6 +12,11 @@ SERVER_CMD = [sys.executable, "-u", str(ROOT / "scripts" / "mcp_stdio_server.py"
 
 
 def _start_server():
+    return _start_server_with_env({})
+
+
+def _start_server_with_env(extra_env):
+    env = {**os.environ, **extra_env}
     proc = subprocess.Popen(
         SERVER_CMD,
         stdin=subprocess.PIPE,
@@ -18,6 +24,7 @@ def _start_server():
         stderr=subprocess.PIPE,
         text=True,
         cwd=ROOT,
+        env=env,
     )
     out_queue: "queue.Queue[str]" = queue.Queue()
 
@@ -39,6 +46,18 @@ def _read(out_queue, timeout=1.0):
         return out_queue.get(timeout=timeout)
     except queue.Empty:
         return None
+
+
+def _drain(out_queue, timeout=0.2):
+    lines = []
+    while True:
+        try:
+            line = out_queue.get(timeout=timeout if not lines else 0.05)
+        except queue.Empty:
+            break
+        else:
+            lines.append(line)
+    return lines
 
 
 def test_stdio_protocol_roundtrip():
@@ -72,6 +91,46 @@ def test_stdio_protocol_roundtrip():
 
         time.sleep(0.1)
         assert _read(out_queue, timeout=0.2) is None, "unexpected extra output on stdout"
+    finally:
+        if proc.stdin:
+            proc.stdin.close()
+        try:
+            proc.wait(timeout=1.0)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+
+def test_tools_call_bridge_errors_without_stdout_noise():
+    proc, out_queue = _start_server_with_env(
+        {"NEW_MCP_BRIDGE_URL": "http://127.0.0.1:65500", "NEW_MCP_BRIDGE_TIMEOUT": "0.2"}
+    )
+    try:
+        _send(
+            proc,
+            {"jsonrpc": "2.0", "id": 10, "method": "tools/call", "params": {"name": "blender.ping", "arguments": {}}},
+        )
+        _send(
+            proc,
+            {
+                "jsonrpc": "2.0",
+                "id": 11,
+                "method": "tools/call",
+                "params": {"name": "blender.snapshot", "arguments": {}},
+            },
+        )
+        lines = [_read(out_queue, timeout=1.0), _read(out_queue, timeout=1.0)]
+        lines = [line for line in lines if line is not None]
+        assert len(lines) == 2, "expected two responses for tools/call"
+        for line, expected_id in zip(lines, (10, 11)):
+            msg = json.loads(line)
+            assert msg.get("id") == expected_id
+            assert "error" in msg
+            assert msg["error"]["code"] == -32000
+
+        # Send notification and ensure no output follows
+        _send(proc, {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}})
+        time.sleep(0.1)
+        assert _drain(out_queue) == [], "no extra stdout expected"
     finally:
         if proc.stdin:
             proc.stdin.close()

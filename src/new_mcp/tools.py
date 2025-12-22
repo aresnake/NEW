@@ -1,11 +1,22 @@
 import json
+import os
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
-BRIDGE_URL = "http://127.0.0.1:8765"
+BRIDGE_URL = os.environ.get("NEW_MCP_BRIDGE_URL", "http://127.0.0.1:8765")
 SERVER_VERSION = "0.1.0"
+
+
+def _get_timeout(default: float) -> float:
+    env_val = os.environ.get("NEW_MCP_BRIDGE_TIMEOUT")
+    if env_val is None:
+        return default
+    try:
+        return float(env_val)
+    except ValueError:
+        return default
 
 
 class ToolError(Exception):
@@ -23,16 +34,17 @@ class Tool:
     handler: Callable[[Dict[str, Any]], Dict[str, Any]]
 
 
-def _bridge_request(path: str, payload: Optional[Dict[str, Any]] = None, timeout: float = 3.0) -> Any:
+def _bridge_request(path: str, payload: Optional[Dict[str, Any]] = None, timeout: float = 0.5) -> Any:
     url = f"{BRIDGE_URL}{path}"
+    use_timeout = _get_timeout(timeout)
     data: Optional[bytes] = None
-    headers = {}
+    headers: Dict[str, str] = {}
     if payload is not None:
         data = json.dumps(payload).encode("utf-8")
         headers["Content-Type"] = "application/json"
-    req = urllib.request.Request(url, data=data, headers=headers or None)
+    req = urllib.request.Request(url, data=data, headers=headers)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(req, timeout=use_timeout) as resp:
             body = resp.read()
     except (urllib.error.HTTPError, urllib.error.URLError) as exc:
         raise ToolError(f"Bridge unreachable: {exc}") from exc
@@ -122,7 +134,7 @@ class ToolRegistry:
         return {"content": [{"type": "text", "text": text}], "structured": structured}
 
     def _tool_blender_snapshot(self, _: Dict[str, Any]) -> Dict[str, Any]:
-        data = _bridge_request("/snapshot", timeout=5.0)
+        data = _bridge_request("/snapshot", timeout=2.0)
         text = f"scene: {data.get('scene')}"
         return {"content": [{"type": "text", "text": text}], "structured": data}
 
