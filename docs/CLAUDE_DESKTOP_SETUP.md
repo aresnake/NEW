@@ -20,6 +20,12 @@ Add to your Claude Desktop `mcpServers`:
 - `blender-scale-object`
 - `blender-rotate-object`
 - `blender-delete-object`
+- `blender-join-objects`
+- `blender-set-origin`
+- `blender-apply-transforms`
+- `blender-create-material`
+- `blender-export`
+- `blender-rename-object`
 - `macro-blockout`
 - `intent-resolve`
 - `intent-run`
@@ -92,6 +98,30 @@ Examples:
 - blender-rotate-object:
   ```json
   {"jsonrpc":"2.0","id":20,"method":"tools/call","params":{"name":"blender-rotate-object","arguments":{"name":"Cube","rotation":[0,0,90],"space":"world"}}}
+  ```
+- blender-join-objects:
+  ```json
+  {"jsonrpc":"2.0","id":21,"method":"tools/call","params":{"name":"blender-join-objects","arguments":{"objects":["Cube","Cylinder"],"name":"Joined"}}}
+  ```
+- blender-set-origin:
+  ```json
+  {"jsonrpc":"2.0","id":22,"method":"tools/call","params":{"name":"blender-set-origin","arguments":{"name":"Cube","type":"geometry"}}}
+  ```
+- blender-apply-transforms:
+  ```json
+  {"jsonrpc":"2.0","id":23,"method":"tools/call","params":{"name":"blender-apply-transforms","arguments":{"name":"Cube","location":true,"rotation":true,"scale":true}}}
+  ```
+- blender-create-material:
+  ```json
+  {"jsonrpc":"2.0","id":24,"method":"tools/call","params":{"name":"blender-create-material","arguments":{"name":"MyMat","base_color":[1.0,0.0,0.0,1.0]}}}
+  ```
+- blender-export:
+  ```json
+  {"jsonrpc":"2.0","id":25,"method":"tools/call","params":{"name":"blender-export","arguments":{"path":"D:\\\\output.fbx","format":"fbx","selected_only":false}}}
+  ```
+- blender-rename-object:
+  ```json
+  {"jsonrpc":"2.0","id":26,"method":"tools/call","params":{"name":"blender-rename-object","arguments":{"old_name":"Cube","new_name":"Box"}}}
   ```
 
 Debugging:

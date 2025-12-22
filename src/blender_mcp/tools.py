@@ -336,6 +336,93 @@ class ToolRegistry:
             },
             self._tool_tool_request,
         )
+        self._register(
+            "blender-join-objects",
+            "Join multiple objects into one",
+            {
+                "type": "object",
+                "properties": {
+                    "objects": {"type": "array"},
+                    "name": {"type": "string"},
+                },
+                "required": ["objects", "name"],
+                "additionalProperties": False,
+            },
+            self._tool_join_objects,
+        )
+        self._register(
+            "blender-set-origin",
+            "Set object origin to geometry, cursor, or mass center",
+            {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "type": {"type": "string"},
+                },
+                "required": ["name", "type"],
+                "additionalProperties": False,
+            },
+            self._tool_set_origin,
+        )
+        self._register(
+            "blender-apply-transforms",
+            "Apply location, rotation, and/or scale to object",
+            {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "location": {"type": "boolean"},
+                    "rotation": {"type": "boolean"},
+                    "scale": {"type": "boolean"},
+                },
+                "required": ["name"],
+                "additionalProperties": False,
+            },
+            self._tool_apply_transforms,
+        )
+        self._register(
+            "blender-create-material",
+            "Create a new material with optional base color",
+            {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "base_color": {"type": "array"},
+                },
+                "required": ["name"],
+                "additionalProperties": False,
+            },
+            self._tool_create_material,
+        )
+        self._register(
+            "blender-export",
+            "Export scene to FBX or glTF format",
+            {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "format": {"type": "string"},
+                    "selected_only": {"type": "boolean"},
+                },
+                "required": ["path", "format"],
+                "additionalProperties": False,
+            },
+            self._tool_export,
+        )
+        self._register(
+            "blender-rename-object",
+            "Rename an object",
+            {
+                "type": "object",
+                "properties": {
+                    "old_name": {"type": "string"},
+                    "new_name": {"type": "string"},
+                },
+                "required": ["old_name", "new_name"],
+                "additionalProperties": False,
+            },
+            self._tool_rename_object,
+        )
 
     def list_tools(self) -> List[Dict[str, Any]]:
         return [
@@ -791,3 +878,188 @@ else:
             return self.call_tool(tool, arguments)
         except ToolError as exc:
             return _make_tool_result(str(exc), is_error=True)
+
+    def _tool_join_objects(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        objects = args.get("objects")
+        name = args.get("name")
+        if not isinstance(objects, list) or not objects:
+            raise ToolError("objects must be a non-empty list", code=-32602)
+        if not isinstance(name, str):
+            raise ToolError("name must be a string", code=-32602)
+        for obj in objects:
+            if not isinstance(obj, str):
+                raise ToolError("all objects must be strings", code=-32602)
+        code = f"""
+import bpy
+objects = {json.dumps(objects)}
+name = {json.dumps(name)}
+bpy.ops.object.select_all(action='DESELECT')
+for obj_name in objects:
+    obj = bpy.data.objects.get(obj_name)
+    if obj is None:
+        raise ValueError(f"Object {{obj_name}} not found")
+    obj.select_set(True)
+if not bpy.context.selected_objects:
+    raise ValueError("No objects selected")
+bpy.context.view_layer.objects.active = bpy.context.selected_objects[0]
+bpy.ops.object.join()
+bpy.context.active_object.name = name
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to join objects", is_error=True)
+        return _make_tool_result(f"Joined {len(objects)} objects into {name}", is_error=False)
+
+    def _tool_set_origin(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        name = args.get("name")
+        origin_type = args.get("type")
+        if not isinstance(name, str):
+            raise ToolError("name must be a string", code=-32602)
+        if not isinstance(origin_type, str):
+            raise ToolError("type must be a string", code=-32602)
+        valid_types = {"geometry": "ORIGIN_GEOMETRY", "cursor": "ORIGIN_CURSOR", "mass_center": "ORIGIN_CENTER_OF_MASS"}
+        if origin_type not in valid_types:
+            raise ToolError(f"type must be one of {list(valid_types.keys())}", code=-32602)
+        blender_type = valid_types[origin_type]
+        code = f"""
+import bpy
+name = {json.dumps(name)}
+obj = bpy.data.objects.get(name)
+if obj is None:
+    raise ValueError(f"Object {{name}} not found")
+bpy.ops.object.select_all(action='DESELECT')
+obj.select_set(True)
+bpy.context.view_layer.objects.active = obj
+bpy.ops.object.origin_set(type={json.dumps(blender_type)})
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to set origin", is_error=True)
+        return _make_tool_result(f"Set origin of {name} to {origin_type}", is_error=False)
+
+    def _tool_apply_transforms(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        name = args.get("name")
+        location = args.get("location", False)
+        rotation = args.get("rotation", False)
+        scale = args.get("scale", False)
+        if not isinstance(name, str):
+            raise ToolError("name must be a string", code=-32602)
+        if not isinstance(location, bool):
+            raise ToolError("location must be a boolean", code=-32602)
+        if not isinstance(rotation, bool):
+            raise ToolError("rotation must be a boolean", code=-32602)
+        if not isinstance(scale, bool):
+            raise ToolError("scale must be a boolean", code=-32602)
+        code = f"""
+import bpy
+name = {json.dumps(name)}
+obj = bpy.data.objects.get(name)
+if obj is None:
+    raise ValueError(f"Object {{name}} not found")
+bpy.ops.object.select_all(action='DESELECT')
+obj.select_set(True)
+bpy.context.view_layer.objects.active = obj
+bpy.ops.object.transform_apply(location={location}, rotation={rotation}, scale={scale})
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to apply transforms", is_error=True)
+        parts = []
+        if location:
+            parts.append("location")
+        if rotation:
+            parts.append("rotation")
+        if scale:
+            parts.append("scale")
+        applied = ", ".join(parts) if parts else "none"
+        return _make_tool_result(f"Applied transforms ({applied}) to {name}", is_error=False)
+
+    def _validate_rgba(self, value: Any, *, name: str) -> Optional[List[float]]:
+        if value is None:
+            return None
+        if not isinstance(value, list) or len(value) != 4:
+            raise ToolError(f"{name} must be an array of 4 numbers (RGBA)", code=-32602)
+        out: List[float] = []
+        for v in value:
+            try:
+                out.append(float(v))
+            except (TypeError, ValueError):
+                raise ToolError(f"{name} must be an array of 4 numbers (RGBA)", code=-32602)
+        return out
+
+    def _tool_create_material(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        name = args.get("name")
+        base_color = self._validate_rgba(args.get("base_color"), name="base_color")
+        if not isinstance(name, str):
+            raise ToolError("name must be a string", code=-32602)
+        if base_color is None:
+            base_color = [0.8, 0.8, 0.8, 1.0]
+        code = f"""
+import bpy
+name = {json.dumps(name)}
+mat = bpy.data.materials.new(name=name)
+mat.use_nodes = True
+nodes = mat.node_tree.nodes
+links = mat.node_tree.links
+nodes.clear()
+bsdf = nodes.new(type='ShaderNodeBsdfPrincipled')
+bsdf.location = (0, 0)
+bsdf.inputs['Base Color'].default_value = ({base_color[0]}, {base_color[1]}, {base_color[2]}, {base_color[3]})
+output = nodes.new(type='ShaderNodeOutputMaterial')
+output.location = (300, 0)
+links.new(bsdf.outputs['BSDF'], output.inputs['Surface'])
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to create material", is_error=True)
+        return _make_tool_result(f"Created material {name}", is_error=False)
+
+    def _tool_export(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        path = args.get("path")
+        fmt = args.get("format")
+        selected_only = args.get("selected_only", False)
+        if not isinstance(path, str):
+            raise ToolError("path must be a string", code=-32602)
+        if not isinstance(fmt, str):
+            raise ToolError("format must be a string", code=-32602)
+        if not isinstance(selected_only, bool):
+            raise ToolError("selected_only must be a boolean", code=-32602)
+        if fmt not in ("fbx", "gltf"):
+            raise ToolError("format must be 'fbx' or 'gltf'", code=-32602)
+        if fmt == "fbx":
+            code = f"""
+import bpy
+path = {json.dumps(path)}
+bpy.ops.export_scene.fbx(filepath=path, use_selection={selected_only})
+"""
+        else:
+            code = f"""
+import bpy
+path = {json.dumps(path)}
+bpy.ops.export_scene.gltf(filepath=path, use_selection={selected_only})
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=10.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to export", is_error=True)
+        return _make_tool_result(f"Exported to {path} as {fmt}", is_error=False)
+
+    def _tool_rename_object(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        old_name = args.get("old_name")
+        new_name = args.get("new_name")
+        if not isinstance(old_name, str):
+            raise ToolError("old_name must be a string", code=-32602)
+        if not isinstance(new_name, str):
+            raise ToolError("new_name must be a string", code=-32602)
+        code = f"""
+import bpy
+old_name = {json.dumps(old_name)}
+new_name = {json.dumps(new_name)}
+obj = bpy.data.objects.get(old_name)
+if obj is None:
+    raise ValueError(f"Object {{old_name}} not found")
+obj.name = new_name
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to rename object", is_error=True)
+        return _make_tool_result(f"Renamed {old_name} to {new_name}", is_error=False)

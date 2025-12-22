@@ -109,3 +109,51 @@ def test_blender_tools_success_with_mock_bridge():
             assert result.get("isError") is False
     finally:
         _cleanup(proc, server)
+
+
+def test_blender_new_tools_with_mock_bridge():
+    server, url = _start_mock_bridge()
+    proc = _start_server(url)
+    try:
+        calls = [
+            {
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": "blender-join-objects", "arguments": {"objects": ["Cube", "Cylinder"], "name": "Joined"}},
+            },
+            {
+                "id": 2,
+                "method": "tools/call",
+                "params": {"name": "blender-set-origin", "arguments": {"name": "Cube", "type": "geometry"}},
+            },
+            {
+                "id": 3,
+                "method": "tools/call",
+                "params": {"name": "blender-apply-transforms", "arguments": {"name": "Cube", "scale": True}},
+            },
+            {
+                "id": 4,
+                "method": "tools/call",
+                "params": {"name": "blender-create-material", "arguments": {"name": "MyMat"}},
+            },
+            {
+                "id": 5,
+                "method": "tools/call",
+                "params": {"name": "blender-export", "arguments": {"path": "/tmp/test.fbx", "format": "fbx"}},
+            },
+            {
+                "id": 6,
+                "method": "tools/call",
+                "params": {"name": "blender-rename-object", "arguments": {"old_name": "Cube", "new_name": "Box"}},
+            },
+        ]
+        for call in calls:
+            _send(proc, {"jsonrpc": "2.0", **call})
+            line = _read(proc, timeout=1.0)
+            assert line is not None
+            msg = json.loads(line)
+            result = msg.get("result")
+            assert isinstance(result, dict)
+            assert result.get("isError") is False
+    finally:
+        _cleanup(proc, server)
