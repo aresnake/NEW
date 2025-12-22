@@ -6,44 +6,55 @@ import threading
 import time
 import traceback
 import uuid
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import bpy
 
-HOST = "127.0.0.1"
-PORT = 8765
-EXEC_TIMEOUT = float(os.environ.get("NEW_MCP_EXEC_TIMEOUT", "10.0") or 10.0)
-_job_queue: "queue.Queue[dict]" = queue.Queue()
-_job_results: dict = {}
-_server = None
-_timer_registered = False
-_debug_stats = {"ticks": 0, "queued": 0, "executed": 0}
-_jobs_lock = threading.Lock()
+
+def _log(msg: str) -> None:
+    try:
+        sys.stderr.write(msg + "\n")
+        sys.stderr.flush()
+    except Exception:
+        pass
 
 
-def _register_timer():
-    global _timer_registered
-    if _timer_registered:
-        return
-    bpy.app.timers.register(_drain_queue, first_interval=0.05, persistent=True)
-    _timer_registered = True
-    sys.stderr.write("[bridge] timer registered\n")
-    sys.stderr.flush()
+BRIDGE_STATE = {
+    "queue": queue.Queue(),
+    "jobs": {},
+    "stats": {"ticks": 0, "queued": 0, "executed": 0},
+    "timer_registered": False,
+    "server_thread": None,
+    "httpd": None,
+    "host": "127.0.0.1",
+    "port": 8765,
+    "exec_timeout": float(os.environ.get("NEW_MCP_EXEC_TIMEOUT", "10.0") or 10.0),
+}
 
 
-def _drain_queue():
-    _debug_stats["ticks"] += 1
+def drain_queue():
+    state = BRIDGE_STATE
+    state["stats"]["ticks"] += 1
     processed = 0
     max_per_tick = 10
     while processed < max_per_tick:
         try:
-            job = _job_queue.get_nowait()
+            job = state["queue"].get_nowait()
         except queue.Empty:
             break
         _run_job(job)
+        state["stats"]["executed"] += 1
         processed += 1
-        _debug_stats["executed"] += 1
     return 0.05
+
+
+def _register_timer():
+    state = BRIDGE_STATE
+    if state["timer_registered"]:
+        return
+    bpy.app.timers.register(drain_queue, first_interval=0.05, persistent=True)
+    state["timer_registered"] = True
+    _log("[bridge] Timer registered")
 
 
 def _run_job(job: dict) -> None:
@@ -61,20 +72,14 @@ def _run_job(job: dict) -> None:
         job["error"] = str(exc)
         job["traceback"] = traceback.format_exc()
     finally:
-        with _jobs_lock:
-            _job_results[job["id"]] = job
         job["done_event"].set()
 
 
-class _Handler(BaseHTTPRequestHandler):
-    server_version = "blender_bridge/0.1"
+class BridgeHandler(BaseHTTPRequestHandler):
+    server_version = "blender_bridge/0.2"
 
     def log_message(self, format: str, *args) -> None:  # noqa: A003
-        try:
-            msg = "%s - - [%s] %s\n" % (self.address_string(), self.log_date_time_string(), format % args)
-            sys.stderr.write(msg)
-        except Exception:
-            pass
+        _log("%s - - [%s] %s" % (self.address_string(), self.log_date_time_string(), format % args))
 
     def _send_json(self, payload, status=200):
         body = json.dumps(payload).encode("utf-8")
@@ -107,11 +112,13 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json(snapshot)
             return
         if self.path == "/debug":
+            state = BRIDGE_STATE
             payload = {
-                "ticks": _debug_stats["ticks"],
-                "queued": _debug_stats["queued"],
-                "executed": _debug_stats["executed"],
-                "queue_size": _job_queue.qsize(),
+                "ticks": state["stats"]["ticks"],
+                "queued": state["stats"]["queued"],
+                "executed": state["stats"]["executed"],
+                "queue_size": state["queue"].qsize(),
+                "timer_registered": state["timer_registered"],
             }
             self._send_json(payload)
             return
@@ -128,10 +135,11 @@ class _Handler(BaseHTTPRequestHandler):
         except json.JSONDecodeError:
             self._send_json({"ok": False, "error": "Invalid JSON"}, status=400)
             return
-        code = payload.get("code") or ""
+        code = payload.get("code")
         if not isinstance(code, str):
             self._send_json({"ok": False, "error": "code must be a string"}, status=400)
             return
+
         job_id = str(uuid.uuid4())
         job = {
             "id": job_id,
@@ -139,48 +147,49 @@ class _Handler(BaseHTTPRequestHandler):
             "created_at": time.time(),
             "done_event": threading.Event(),
             "ok": None,
-            "output": "",
             "error": None,
             "traceback": None,
         }
-        _job_queue.put(job)
-        _debug_stats["queued"] += 1
-        sys.stderr.write(f"[bridge] queued job {job_id}\n")
-        sys.stderr.flush()
-        done = job["done_event"].wait(timeout=EXEC_TIMEOUT)
+        state = BRIDGE_STATE
+        state["jobs"][job_id] = job
+        state["queue"].put(job)
+        state["stats"]["queued"] += 1
+        _log(f"[bridge] queued job {job_id}")
+
+        done = job["done_event"].wait(timeout=state["exec_timeout"])
         if not done or job["ok"] is None:
             self._send_json({"ok": False, "error": "Timed out waiting for execution", "id": job_id})
             return
-        resp = {
-            "ok": bool(job["ok"]),
-            "error": job["error"],
-            "traceback": job["traceback"],
-            "id": job_id,
-        }
-        self._send_json(resp)
+        if job["ok"]:
+            self._send_json({"ok": True, "id": job_id})
+        else:
+            self._send_json({"ok": False, "id": job_id, "error": job["error"], "traceback": job["traceback"]})
 
 
 def start_server():
-    global _server
-    if _server is not None:
-        return _server
-    _server = ThreadingHTTPServer((HOST, PORT), _Handler)
-    thread = threading.Thread(target=_server.serve_forever, daemon=True)
+    state = BRIDGE_STATE
+    if state["httpd"] is not None:
+        return state["httpd"]
+    server = HTTPServer((state["host"], state["port"]), BridgeHandler)
+    state["httpd"] = server
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    state["server_thread"] = thread
     thread.start()
+    _log(f"[bridge] HTTP server started on {state['host']}:{state['port']}")
     _register_timer()
-    return _server
+    return server
 
 
 def stop_server():
-    global _server
-    if _server is None:
+    state = BRIDGE_STATE
+    if state["httpd"] is None:
         return
-    _server.shutdown()
-    _server.server_close()
-    _server = None
+    state["httpd"].shutdown()
+    state["httpd"].server_close()
+    state["httpd"] = None
+    state["server_thread"] = None
+    _log("[bridge] HTTP server stopped")
 
 
 if __name__ == "__main__":
     start_server()
-    sys.stderr.write(f"[bridge] running on http://{HOST}:{PORT}\n")
-    sys.stderr.flush()
