@@ -20,6 +20,12 @@ Add to your Claude Desktop `mcpServers`:
 - `macro-blockout`
 - `intent-resolve`
 - `intent-run`
+- `replay-list`
+- `replay-run`
+- `model-start`
+- `model-step`
+- `model-end`
+- `tool-request`
 
 ## Run the Blender bridge (background HTTP server)
 - Blender UI:
@@ -47,6 +53,30 @@ Examples:
 - intent-run:
   ```json
   {"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"intent-run","arguments":{"text":"add cube"}}}
+  ```
+- replay-list:
+  ```json
+  {"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"replay-list","arguments":{"limit":10}}}
+  ```
+- replay-run:
+  ```json
+  {"jsonrpc":"2.0","id":13,"method":"tools/call","params":{"name":"replay-run","arguments":{"id":"<action-id>"}}}
+  ```
+- model-start:
+  ```json
+  {"jsonrpc":"2.0","id":14,"method":"tools/call","params":{"name":"model-start","arguments":{"goal":"blockout scene"}}}
+  ```
+- model-step:
+  ```json
+  {"jsonrpc":"2.0","id":15,"method":"tools/call","params":{"name":"model-step","arguments":{"session":"<session-id>","intent":"move cube","proposed_tool":"blender-move-object","proposed_args":{"name":"Cube","x":1,"y":2,"z":3}}}}}
+  ```
+- model-end:
+  ```json
+  {"jsonrpc":"2.0","id":16,"method":"tools/call","params":{"name":"model-end","arguments":{"session":"<session-id>","summary":"done"}}}
+  ```
+- tool-request:
+  ```json
+  {"jsonrpc":"2.0","id":17,"method":"tools/call","params":{"name":"tool-request","arguments":{"session":"<session-id>","need":"boolean toggle","why":"not available yet"}}}
   ```
 
 Debugging:

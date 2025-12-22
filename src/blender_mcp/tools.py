@@ -17,6 +17,7 @@ DEBUG_EXEC_ENABLED = os.environ.get("BLENDER_MCP_DEBUG_EXEC") == "1" or os.envir
 ROOT_DIR = Path(__file__).resolve().parents[2]
 RUNS_DIR = ROOT_DIR / "runs"
 RUNS_FILE = RUNS_DIR / "actions.jsonl"
+REQUESTS_FILE = RUNS_DIR / "requests.jsonl"
 
 
 def _get_timeout(default: float) -> float:
@@ -92,6 +93,19 @@ def _append_action(tool: str, arguments: Dict[str, Any], result: Dict[str, Any])
     except Exception as exc:  # noqa: BLE001
         try:
             sys.stderr.write(f"[replay] failed to log action: {exc}\n")
+            sys.stderr.flush()
+        except Exception:
+            pass
+
+
+def _append_request(entry: Dict[str, Any]) -> None:
+    try:
+        RUNS_DIR.mkdir(parents=True, exist_ok=True)
+        with REQUESTS_FILE.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception as exc:  # noqa: BLE001
+        try:
+            sys.stderr.write(f"[model] failed to log request: {exc}\n")
             sys.stderr.flush()
         except Exception:
             pass
@@ -221,6 +235,61 @@ class ToolRegistry:
             },
             self._tool_replay_run,
         )
+        self._register(
+            "model-start",
+            "Start an observation session",
+            {
+                "type": "object",
+                "properties": {"goal": {"type": "string"}, "constraints": {"type": "string"}},
+                "required": ["goal"],
+                "additionalProperties": False,
+            },
+            self._tool_model_start,
+        )
+        self._register(
+            "model-step",
+            "Record an observation step",
+            {
+                "type": "object",
+                "properties": {
+                    "session": {"type": "string"},
+                    "intent": {"type": "string"},
+                    "proposed_tool": {"type": "string"},
+                    "proposed_args": {"type": "object"},
+                    "notes": {"type": "string"},
+                },
+                "required": ["session", "intent"],
+                "additionalProperties": False,
+            },
+            self._tool_model_step,
+        )
+        self._register(
+            "model-end",
+            "End an observation session",
+            {
+                "type": "object",
+                "properties": {"session": {"type": "string"}, "summary": {"type": "string"}},
+                "required": ["session", "summary"],
+                "additionalProperties": False,
+            },
+            self._tool_model_end,
+        )
+        self._register(
+            "tool-request",
+            "Request a new tool capability",
+            {
+                "type": "object",
+                "properties": {
+                    "session": {"type": "string"},
+                    "need": {"type": "string"},
+                    "why": {"type": "string"},
+                    "examples": {"type": "array"},
+                },
+                "required": ["session", "need", "why"],
+                "additionalProperties": False,
+            },
+            self._tool_tool_request,
+        )
 
     def list_tools(self) -> List[Dict[str, Any]]:
         return [
@@ -239,7 +308,7 @@ class ToolRegistry:
             result = tool.handler(arguments or {})
         except ToolError as exc:
             result = _make_tool_result(str(exc), is_error=True)
-        if log_action and name not in ("replay-list", "replay-run"):
+        if log_action and name not in ("replay-list", "replay-run", "model-start", "model-step", "model-end", "tool-request"):
             _append_action(name, arguments or {}, result)
         return result
 
@@ -416,6 +485,95 @@ bpy.context.view_layer.objects.active = obj
         if tool not in self._tools:
             return _make_tool_result("stored tool unavailable", is_error=True)
         return self.call_tool(tool, arguments)
+
+    def _tool_model_start(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        goal = args.get("goal")
+        constraints = args.get("constraints")
+        if not isinstance(goal, str):
+            return _make_tool_result("goal must be a string", is_error=True)
+        if constraints is not None and not isinstance(constraints, str):
+            return _make_tool_result("constraints must be a string", is_error=True)
+        session_id = str(uuid.uuid4())
+        entry = {
+            "id": str(uuid.uuid4()),
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "type": "model-start",
+            "session": session_id,
+            "payload": {"goal": goal, "constraints": constraints},
+        }
+        _append_request(entry)
+        return _make_tool_result(f"session: {session_id}", is_error=False)
+
+    def _tool_model_step(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        session = args.get("session")
+        intent = args.get("intent")
+        proposed_tool = args.get("proposed_tool")
+        proposed_args = args.get("proposed_args")
+        notes = args.get("notes")
+        if not isinstance(session, str):
+            return _make_tool_result("session must be a string", is_error=True)
+        if not isinstance(intent, str):
+            return _make_tool_result("intent must be a string", is_error=True)
+        if proposed_tool is not None and not isinstance(proposed_tool, str):
+            return _make_tool_result("proposed_tool must be a string", is_error=True)
+        if proposed_args is not None and not isinstance(proposed_args, dict):
+            return _make_tool_result("proposed_args must be an object", is_error=True)
+        if notes is not None and not isinstance(notes, str):
+            return _make_tool_result("notes must be a string", is_error=True)
+        entry = {
+            "id": str(uuid.uuid4()),
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "type": "model-step",
+            "session": session,
+            "payload": {
+                "intent": intent,
+                "proposed_tool": proposed_tool,
+                "proposed_args": proposed_args,
+                "notes": notes,
+            },
+        }
+        _append_request(entry)
+        return _make_tool_result("model step recorded", is_error=False)
+
+    def _tool_model_end(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        session = args.get("session")
+        summary = args.get("summary")
+        if not isinstance(session, str):
+            return _make_tool_result("session must be a string", is_error=True)
+        if not isinstance(summary, str):
+            return _make_tool_result("summary must be a string", is_error=True)
+        entry = {
+            "id": str(uuid.uuid4()),
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "type": "model-end",
+            "session": session,
+            "payload": {"summary": summary},
+        }
+        _append_request(entry)
+        return _make_tool_result("model session ended", is_error=False)
+
+    def _tool_tool_request(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        session = args.get("session")
+        need = args.get("need")
+        why = args.get("why")
+        examples = args.get("examples")
+        if not isinstance(session, str):
+            return _make_tool_result("session must be a string", is_error=True)
+        if not isinstance(need, str):
+            return _make_tool_result("need must be a string", is_error=True)
+        if not isinstance(why, str):
+            return _make_tool_result("why must be a string", is_error=True)
+        if examples is not None and not isinstance(examples, list):
+            return _make_tool_result("examples must be a list", is_error=True)
+        entry = {
+            "id": str(uuid.uuid4()),
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "type": "tool-request",
+            "session": session,
+            "payload": {"need": need, "why": why, "examples": examples},
+        }
+        _append_request(entry)
+        return _make_tool_result("tool request recorded", is_error=False)
 
     def _resolve_intent(self, text: str) -> Dict[str, Any]:
         if not isinstance(text, str):

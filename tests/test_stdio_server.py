@@ -103,6 +103,10 @@ def test_stdio_protocol_roundtrip():
         assert "intent-run" in names
         assert "replay-list" in names
         assert "replay-run" in names
+        assert "model-start" in names
+        assert "model-step" in names
+        assert "model-end" in names
+        assert "tool-request" in names
         for tool in tools:
             assert NAME_PATTERN.match(tool["name"]), f"tool name fails regex: {tool['name']}"
 
