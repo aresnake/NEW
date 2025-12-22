@@ -41,6 +41,13 @@ Add to your Claude Desktop `mcpServers`:
 - `blender-delete-all`
 - `blender-reset-transform`
 - `blender-get-mesh-stats`
+- `blender-extrude`
+- `blender-inset`
+- `blender-loop-cut`
+- `blender-bevel-edges`
+- `blender-add-modifier`
+- `blender-apply-modifier`
+- `blender-boolean`
 - `macro-blockout`
 - `intent-resolve`
 - `intent-run`
@@ -197,6 +204,34 @@ Examples:
 - blender-get-mesh-stats:
   ```json
   {"jsonrpc":"2.0","id":41,"method":"tools/call","params":{"name":"blender-get-mesh-stats","arguments":{"name":"Cube"}}}
+  ```
+- blender-extrude:
+  ```json
+  {"jsonrpc":"2.0","id":42,"method":"tools/call","params":{"name":"blender-extrude","arguments":{"name":"Cube","mode":"faces","distance":0.1}}}
+  ```
+- blender-inset:
+  ```json
+  {"jsonrpc":"2.0","id":43,"method":"tools/call","params":{"name":"blender-inset","arguments":{"name":"Cube","thickness":0.02}}}
+  ```
+- blender-loop-cut:
+  ```json
+  {"jsonrpc":"2.0","id":44,"method":"tools/call","params":{"name":"blender-loop-cut","arguments":{"name":"Cube","cuts":2,"position":0.5}}}
+  ```
+- blender-bevel-edges:
+  ```json
+  {"jsonrpc":"2.0","id":45,"method":"tools/call","params":{"name":"blender-bevel-edges","arguments":{"name":"Cube","width":0.05,"segments":2}}}
+  ```
+- blender-add-modifier:
+  ```json
+  {"jsonrpc":"2.0","id":46,"method":"tools/call","params":{"name":"blender-add-modifier","arguments":{"name":"Cube","type":"array","settings":{"count":2,"relative_offset":[1,0,0]}}}}
+  ```
+- blender-apply-modifier:
+  ```json
+  {"jsonrpc":"2.0","id":47,"method":"tools/call","params":{"name":"blender-apply-modifier","arguments":{"name":"Cube","modifier":"Array"}}}
+  ```
+- blender-boolean:
+  ```json
+  {"jsonrpc":"2.0","id":48,"method":"tools/call","params":{"name":"blender-boolean","arguments":{"name":"Cube","cutter":"Cutter","operation":"union","apply":true}}}
   ```
 
 Debugging:

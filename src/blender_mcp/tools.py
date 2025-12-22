@@ -586,6 +586,44 @@ class ToolRegistry:
             self._tool_set_shading,
         )
         self._register(
+            "blender-add-modifier",
+            "Add a modifier to an object with optional settings",
+            {
+                "type": "object",
+                "properties": {"name": {"type": "string"}, "type": {"type": "string"}, "settings": {"type": "object"}},
+                "required": ["name", "type"],
+                "additionalProperties": False,
+            },
+            self._tool_add_modifier,
+        )
+        self._register(
+            "blender-apply-modifier",
+            "Apply a modifier on an object",
+            {
+                "type": "object",
+                "properties": {"name": {"type": "string"}, "modifier": {"type": "string"}},
+                "required": ["name", "modifier"],
+                "additionalProperties": False,
+            },
+            self._tool_apply_modifier,
+        )
+        self._register(
+            "blender-boolean",
+            "Perform a boolean operation using a cutter object",
+            {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "cutter": {"type": "string"},
+                    "operation": {"type": "string"},
+                    "apply": {"type": "boolean"},
+                },
+                "required": ["name", "cutter", "operation"],
+                "additionalProperties": False,
+            },
+            self._tool_boolean,
+        )
+        self._register(
             "blender-delete-all",
             "Delete all objects (safety confirm required)",
             {
@@ -617,6 +655,50 @@ class ToolRegistry:
                 "additionalProperties": False,
             },
             self._tool_get_mesh_stats,
+        )
+        self._register(
+            "blender-extrude",
+            "Extrude all faces of a mesh",
+            {
+                "type": "object",
+                "properties": {"name": {"type": "string"}, "mode": {"type": "string"}, "distance": {"type": "number"}},
+                "required": ["name", "mode", "distance"],
+                "additionalProperties": False,
+            },
+            self._tool_extrude,
+        )
+        self._register(
+            "blender-inset",
+            "Inset all faces of a mesh",
+            {
+                "type": "object",
+                "properties": {"name": {"type": "string"}, "thickness": {"type": "number"}},
+                "required": ["name", "thickness"],
+                "additionalProperties": False,
+            },
+            self._tool_inset,
+        )
+        self._register(
+            "blender-loop-cut",
+            "Add loop cuts to a mesh",
+            {
+                "type": "object",
+                "properties": {"name": {"type": "string"}, "cuts": {"type": "integer"}, "position": {"type": "number"}},
+                "required": ["name", "cuts"],
+                "additionalProperties": False,
+            },
+            self._tool_loop_cut,
+        )
+        self._register(
+            "blender-bevel-edges",
+            "Bevel mesh edges",
+            {
+                "type": "object",
+                "properties": {"name": {"type": "string"}, "width": {"type": "number"}, "segments": {"type": "integer"}},
+                "required": ["name", "width", "segments"],
+                "additionalProperties": False,
+            },
+            self._tool_bevel_edges,
         )
 
     def list_tools(self) -> List[Dict[str, Any]]:
@@ -1645,6 +1727,367 @@ result = {{
         else:
             text = f"Mesh stats for {name}"
         return _make_tool_result(text, is_error=False)
+
+    def _tool_extrude(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        name = args.get("name")
+        mode = args.get("mode")
+        distance = args.get("distance")
+        if not isinstance(name, str):
+            raise ToolError("name must be a string", code=-32602)
+        if mode not in ("faces",):
+            raise ToolError("mode must be 'faces'", code=-32602)
+        try:
+            dist = float(distance)
+        except Exception:
+            raise ToolError("distance must be a number", code=-32602)
+        code = f"""
+import bpy, bmesh
+name = {json.dumps(name)}
+obj = bpy.data.objects.get(name)
+if obj is None:
+    raise ValueError("Object not found")
+if obj.type != 'MESH':
+    raise ValueError("Object is not a mesh")
+mesh = obj.data
+bm = bmesh.new()
+bm.from_mesh(mesh)
+bm.normal_update()
+faces = bm.faces[:]
+if not faces:
+    raise ValueError("Mesh has no faces")
+geom = bmesh.ops.extrude_face_region(bm, geom=faces)
+verts = [ele for ele in geom["geom"] if isinstance(ele, bmesh.types.BMVert)]
+if not verts:
+    raise ValueError("Extrude failed")
+for v in verts:
+    v.co += v.normal.normalized() * {dist}
+bm.to_mesh(mesh)
+bm.free()
+mesh.update()
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to extrude", is_error=True)
+        return _make_tool_result(f"Extruded faces on {name}", is_error=False)
+
+    def _tool_inset(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        name = args.get("name")
+        thickness = args.get("thickness")
+        if not isinstance(name, str):
+            raise ToolError("name must be a string", code=-32602)
+        try:
+            thickness_val = float(thickness)
+        except Exception:
+            raise ToolError("thickness must be a number", code=-32602)
+        code = f"""
+import bpy, bmesh
+name = {json.dumps(name)}
+obj = bpy.data.objects.get(name)
+if obj is None:
+    raise ValueError("Object not found")
+if obj.type != 'MESH':
+    raise ValueError("Object is not a mesh")
+mesh = obj.data
+bm = bmesh.new()
+bm.from_mesh(mesh)
+faces = bm.faces[:]
+if not faces:
+    raise ValueError("Mesh has no faces")
+bmesh.ops.inset_region(bm, faces=faces, thickness={thickness_val}, depth=0.0, use_even_offset=True)
+bm.to_mesh(mesh)
+bm.free()
+mesh.update()
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to inset", is_error=True)
+        return _make_tool_result(f"Inset faces on {name}", is_error=False)
+
+    def _tool_loop_cut(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        name = args.get("name")
+        cuts = args.get("cuts")
+        position = args.get("position", 0.5)
+        if not isinstance(name, str):
+            raise ToolError("name must be a string", code=-32602)
+        try:
+            cuts_i = int(cuts)
+        except Exception:
+            raise ToolError("cuts must be an integer", code=-32602)
+        if cuts_i < 1 or cuts_i > 20:
+            raise ToolError("cuts must be between 1 and 20", code=-32602)
+        try:
+            pos_f = float(position)
+        except Exception:
+            raise ToolError("position must be a number", code=-32602)
+        if pos_f < 0.0 or pos_f > 1.0:
+            raise ToolError("position must be between 0 and 1", code=-32602)
+        code = f"""
+import bpy, bmesh
+name = {json.dumps(name)}
+obj = bpy.data.objects.get(name)
+if obj is None:
+    raise ValueError("Object not found")
+if obj.type != 'MESH':
+    raise ValueError("Object is not a mesh")
+mesh = obj.data
+bm = bmesh.new()
+bm.from_mesh(mesh)
+edges = bm.edges[:]
+if not edges:
+    raise ValueError("Mesh has no edges")
+perc = [{pos_f} for _ in edges]
+bmesh.ops.subdivide_edges(bm, edges=edges, cuts={cuts_i}, edge_perc=perc, use_grid_fill=False)
+bm.to_mesh(mesh)
+bm.free()
+mesh.update()
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to add loop cuts", is_error=True)
+        return _make_tool_result(f"Added {cuts_i} loop cuts on {name}", is_error=False)
+
+    def _tool_bevel_edges(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        name = args.get("name")
+        width = args.get("width")
+        segments = args.get("segments")
+        if not isinstance(name, str):
+            raise ToolError("name must be a string", code=-32602)
+        try:
+            width_f = float(width)
+        except Exception:
+            raise ToolError("width must be a number", code=-32602)
+        if width_f <= 0:
+            raise ToolError("width must be > 0", code=-32602)
+        try:
+            segments_i = int(segments)
+        except Exception:
+            raise ToolError("segments must be an integer", code=-32602)
+        if segments_i < 1 or segments_i > 12:
+            raise ToolError("segments must be between 1 and 12", code=-32602)
+        code = f"""
+import bpy, bmesh
+name = {json.dumps(name)}
+obj = bpy.data.objects.get(name)
+if obj is None:
+    raise ValueError("Object not found")
+if obj.type != 'MESH':
+    raise ValueError("Object is not a mesh")
+mesh = obj.data
+bm = bmesh.new()
+bm.from_mesh(mesh)
+edges = bm.edges[:]
+if not edges:
+    raise ValueError("Mesh has no edges")
+bmesh.ops.bevel(bm, geom=edges, offset={width_f}, offset_type='OFFSET', segments={segments_i}, profile=0.5, clamp_overlap=True)
+bm.to_mesh(mesh)
+bm.free()
+mesh.update()
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to bevel edges", is_error=True)
+        return _make_tool_result(f"Beveled edges on {name}", is_error=False)
+
+    def _tool_add_modifier(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        name = args.get("name")
+        mod_type = args.get("type")
+        settings = args.get("settings") or {}
+        if not isinstance(name, str):
+            raise ToolError("name must be a string", code=-32602)
+        if not isinstance(mod_type, str):
+            raise ToolError("type must be a string", code=-32602)
+        if settings is not None and not isinstance(settings, dict):
+            raise ToolError("settings must be an object", code=-32602)
+        type_map = {
+            "mirror": "MIRROR",
+            "array": "ARRAY",
+            "solidify": "SOLIDIFY",
+            "bevel": "BEVEL",
+            "subdivision": "SUBSURF",
+            "boolean": "BOOLEAN",
+            "decimate": "DECIMATE",
+        }
+        if mod_type not in type_map:
+            raise ToolError("type must be one of mirror,array,solidify,bevel,subdivision,boolean,decimate", code=-32602)
+        clean_settings: Dict[str, Any] = {}
+        if mod_type == "mirror":
+            for axis_key in ("use_axis_x", "use_axis_y", "use_axis_z"):
+                val = settings.get(axis_key)
+                if val is not None:
+                    if not isinstance(val, bool):
+                        raise ToolError(f"{axis_key} must be a boolean", code=-32602)
+                    clean_settings[axis_key] = val
+        if mod_type == "array":
+            count = settings.get("count")
+            if count is not None:
+                try:
+                    count_i = int(count)
+                except Exception:
+                    raise ToolError("count must be an integer", code=-32602)
+                clean_settings["count"] = count_i
+            rel = settings.get("relative_offset")
+            if rel is not None:
+                if not isinstance(rel, list) or len(rel) != 3:
+                    raise ToolError("relative_offset must be an array of 3 numbers", code=-32602)
+                try:
+                    rel_vals = [float(v) for v in rel]
+                except Exception:
+                    raise ToolError("relative_offset must be an array of 3 numbers", code=-32602)
+                clean_settings["relative_offset"] = rel_vals
+        if mod_type == "solidify":
+            thickness = settings.get("thickness")
+            if thickness is not None:
+                try:
+                    clean_settings["thickness"] = float(thickness)
+                except Exception:
+                    raise ToolError("thickness must be a number", code=-32602)
+        if mod_type == "bevel":
+            width = settings.get("width")
+            segments = settings.get("segments")
+            if width is not None:
+                try:
+                    clean_settings["width"] = float(width)
+                except Exception:
+                    raise ToolError("width must be a number", code=-32602)
+            if segments is not None:
+                try:
+                    segments_i = int(segments)
+                except Exception:
+                    raise ToolError("segments must be an integer", code=-32602)
+                clean_settings["segments"] = segments_i
+        if mod_type == "subdivision":
+            levels = settings.get("levels")
+            if levels is not None:
+                try:
+                    clean_settings["levels"] = int(levels)
+                except Exception:
+                    raise ToolError("levels must be an integer", code=-32602)
+        if mod_type == "boolean":
+            cutter = settings.get("cutter")
+            operation = settings.get("operation", "union")
+            if cutter is not None and not isinstance(cutter, str):
+                raise ToolError("cutter must be a string", code=-32602)
+            if operation not in ("union", "difference", "intersect"):
+                raise ToolError("operation must be union, difference, or intersect", code=-32602)
+            clean_settings["cutter"] = cutter
+            clean_settings["operation"] = operation
+        if mod_type == "decimate":
+            ratio = settings.get("ratio")
+            if ratio is not None:
+                try:
+                    r = float(ratio)
+                except Exception:
+                    raise ToolError("ratio must be a number", code=-32602)
+                clean_settings["ratio"] = r
+        mod_bpy_type = type_map[mod_type]
+        code = f"""
+import bpy
+obj = bpy.data.objects.get({json.dumps(name)})
+if obj is None:
+    raise ValueError("Object not found")
+mod = obj.modifiers.new(name={json.dumps(mod_type + "_mod")}, type={json.dumps(mod_bpy_type)})
+settings = {json.dumps(clean_settings)}
+if {json.dumps(mod_type)} == "mirror":
+    for key, val in settings.items():
+        setattr(mod, key, val)
+elif {json.dumps(mod_type)} == "array":
+    if "count" in settings:
+        mod.count = settings["count"]
+    if "relative_offset" in settings:
+        mod.use_relative_offset = True
+        mod.relative_offset_displace = tuple(settings["relative_offset"])
+elif {json.dumps(mod_type)} == "solidify":
+    if "thickness" in settings:
+        mod.thickness = settings["thickness"]
+elif {json.dumps(mod_type)} == "bevel":
+    if "width" in settings:
+        mod.width = settings["width"]
+    if "segments" in settings:
+        mod.segments = settings["segments"]
+elif {json.dumps(mod_type)} == "subdivision":
+    if "levels" in settings:
+        mod.levels = settings["levels"]
+elif {json.dumps(mod_type)} == "boolean":
+    if "cutter" in settings and settings["cutter"]:
+        cutter_obj = bpy.data.objects.get(settings["cutter"])
+        if cutter_obj is None:
+            raise ValueError("Cutter object not found")
+        mod.object = cutter_obj
+    op_map = {{"union": "UNION", "difference": "DIFFERENCE", "intersect": "INTERSECT"}}
+    mod.operation = op_map.get(settings.get("operation", "union"), "UNION")
+elif {json.dumps(mod_type)} == "decimate":
+    if "ratio" in settings:
+        mod.ratio = settings["ratio"]
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to add modifier", is_error=True)
+        return _make_tool_result(f"Added {mod_type} modifier to {name}", is_error=False)
+
+    def _tool_apply_modifier(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        name = args.get("name")
+        modifier = args.get("modifier")
+        if not isinstance(name, str):
+            raise ToolError("name must be a string", code=-32602)
+        if not isinstance(modifier, str):
+            raise ToolError("modifier must be a string", code=-32602)
+        code = f"""
+import bpy
+obj = bpy.data.objects.get({json.dumps(name)})
+if obj is None:
+    raise ValueError("Object not found")
+mod = obj.modifiers.get({json.dumps(modifier)})
+if mod is None:
+    raise ValueError("Modifier not found")
+bpy.ops.object.mode_set(mode='OBJECT')
+bpy.ops.object.select_all(action='DESELECT')
+obj.select_set(True)
+bpy.context.view_layer.objects.active = obj
+bpy.ops.object.modifier_apply(modifier=mod.name)
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=8.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to apply modifier", is_error=True)
+        return _make_tool_result(f"Applied modifier {modifier} on {name}", is_error=False)
+
+    def _tool_boolean(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        name = args.get("name")
+        cutter = args.get("cutter")
+        operation = args.get("operation")
+        apply = args.get("apply", True)
+        if not isinstance(name, str):
+            raise ToolError("name must be a string", code=-32602)
+        if not isinstance(cutter, str):
+            raise ToolError("cutter must be a string", code=-32602)
+        if operation not in ("union", "difference", "intersect"):
+            raise ToolError("operation must be union, difference, or intersect", code=-32602)
+        if not isinstance(apply, bool):
+            raise ToolError("apply must be a boolean", code=-32602)
+        code = f"""
+import bpy
+obj = bpy.data.objects.get({json.dumps(name)})
+if obj is None:
+    raise ValueError("Object not found")
+cutter_obj = bpy.data.objects.get({json.dumps(cutter)})
+if cutter_obj is None:
+    raise ValueError("Cutter object not found")
+mod = obj.modifiers.new(name="Boolean_auto", type="BOOLEAN")
+op_map = {{"union": "UNION", "difference": "DIFFERENCE", "intersect": "INTERSECT"}}
+mod.operation = op_map[{json.dumps(operation)}]
+mod.object = cutter_obj
+"""
+        if apply:
+            code += """
+bpy.ops.object.mode_set(mode='OBJECT')
+bpy.ops.object.select_all(action='DESELECT')
+obj.select_set(True)
+bpy.context.view_layer.objects.active = obj
+bpy.ops.object.modifier_apply(modifier=mod.name)
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=8.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to perform boolean", is_error=True)
+        return _make_tool_result(f"Boolean {operation} on {name} with {cutter}", is_error=False)
 
     def _validate_rgba(self, value: Any, *, name: str) -> Optional[List[float]]:
         if value is None:

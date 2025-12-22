@@ -117,6 +117,13 @@ def test_stdio_protocol_roundtrip():
         assert "blender-delete-all" in names
         assert "blender-reset-transform" in names
         assert "blender-get-mesh-stats" in names
+        assert "blender-extrude" in names
+        assert "blender-inset" in names
+        assert "blender-loop-cut" in names
+        assert "blender-bevel-edges" in names
+        assert "blender-add-modifier" in names
+        assert "blender-apply-modifier" in names
+        assert "blender-boolean" in names
         assert "intent-resolve" in names
         assert "intent-run" in names
         assert "replay-list" in names

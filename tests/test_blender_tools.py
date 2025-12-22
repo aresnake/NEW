@@ -121,6 +121,13 @@ def test_blender_tools_success_with_mock_bridge():
             {"id": 16, "method": "tools/call", "params": {"name": "blender-delete-all", "arguments": {"confirm": "DELETE_ALL"}}},
             {"id": 17, "method": "tools/call", "params": {"name": "blender-reset-transform", "arguments": {"name": "Cube"}}},
             {"id": 18, "method": "tools/call", "params": {"name": "blender-get-mesh-stats", "arguments": {"name": "Cube"}}},
+            {"id": 19, "method": "tools/call", "params": {"name": "blender-extrude", "arguments": {"name": "Cube", "mode": "faces", "distance": 0.1}}},
+            {"id": 20, "method": "tools/call", "params": {"name": "blender-inset", "arguments": {"name": "Cube", "thickness": 0.01}}},
+            {"id": 21, "method": "tools/call", "params": {"name": "blender-loop-cut", "arguments": {"name": "Cube", "cuts": 1, "position": 0.5}}},
+            {"id": 22, "method": "tools/call", "params": {"name": "blender-bevel-edges", "arguments": {"name": "Cube", "width": 0.05, "segments": 2}}},
+            {"id": 23, "method": "tools/call", "params": {"name": "blender-add-modifier", "arguments": {"name": "Cube", "type": "array", "settings": {"count": 2, "relative_offset": [1,0,0]}}}},
+            {"id": 24, "method": "tools/call", "params": {"name": "blender-apply-modifier", "arguments": {"name": "Cube", "modifier": "Array"}}},
+            {"id": 25, "method": "tools/call", "params": {"name": "blender-boolean", "arguments": {"name": "Cube", "cutter": "Cutter", "operation": "union", "apply": True}}},
         ]
         for call in calls:
             _send(proc, {"jsonrpc": "2.0", **call})
@@ -149,6 +156,13 @@ def test_blender_tools_arg_errors():
             {"id": 27, "name": "blender-delete-all", "arguments": {"confirm": "NOPE"}},
             {"id": 28, "name": "blender-reset-transform", "arguments": {"name": 5}},
             {"id": 29, "name": "blender-get-mesh-stats", "arguments": {"name": 5}},
+            {"id": 30, "name": "blender-extrude", "arguments": {"name": "Cube", "mode": "edges", "distance": 0.1}},
+            {"id": 31, "name": "blender-inset", "arguments": {"name": "Cube", "thickness": "nope"}},
+            {"id": 32, "name": "blender-loop-cut", "arguments": {"name": "Cube", "cuts": 0}},
+            {"id": 33, "name": "blender-bevel-edges", "arguments": {"name": "Cube", "width": -1, "segments": 0}},
+            {"id": 34, "name": "blender-add-modifier", "arguments": {"name": "Cube", "type": "unknown"}},
+            {"id": 35, "name": "blender-apply-modifier", "arguments": {"name": 1, "modifier": "Mod"}},
+            {"id": 36, "name": "blender-boolean", "arguments": {"name": "Cube", "cutter": "Cut", "operation": "slice"}},
         ]
         for call in bad_calls:
             _send(
