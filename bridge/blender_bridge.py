@@ -6,7 +6,7 @@ import threading
 import time
 import traceback
 import uuid
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import bpy
 
@@ -170,7 +170,7 @@ def start_server():
     state = BRIDGE_STATE
     if state["httpd"] is not None:
         return state["httpd"]
-    server = HTTPServer((state["host"], state["port"]), BridgeHandler)
+    server = ThreadingHTTPServer((state["host"], state["port"]), BridgeHandler)
     state["httpd"] = server
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     state["server_thread"] = thread
