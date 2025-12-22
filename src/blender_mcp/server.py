@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional
 from .protocol import PROTOCOL_VERSION, make_error, make_result, parse_message, serialize_message
 from .tools import ToolError, ToolRegistry
 
-SERVER_INFO = {"name": "new-mcp-blender", "version": "0.1.0"}
+SERVER_INFO = {"name": "blender-mcp", "version": "0.1.0"}
 
 
 class StdioServer:
@@ -90,9 +90,9 @@ class StdioServer:
                     return make_error(request_id, -32602, "Invalid params")
                 if not isinstance(arguments, dict):
                     raise ToolError("Invalid arguments", code=-32602)
-                if not isinstance(name, str):
-                    raise ToolError("Invalid tool name", code=-32602)
                 result = self.tools.call_tool(name, arguments)
+                if not isinstance(result, dict):
+                    raise ToolError("Tool result must be an object")
                 return make_result(request_id, result)
 
             return make_error(request_id, -32601, "Method not found")

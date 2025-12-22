@@ -9,7 +9,13 @@ Add to your Claude Desktop `mcpServers`:
 }
 ```
 
-## Run the Blender bridge
+## Tools exposed
+- `health`
+- `blender-ping`
+- `blender-snapshot`
+- `blender-exec` (debug)
+
+## Run the Blender bridge (background HTTP server)
 - Blender UI:
   ```powershell
   & "C:\Program Files\Blender Foundation\Blender 5.0\blender.exe" --factory-startup --python D:\v3\bridge\blender_bridge.py
@@ -18,6 +24,8 @@ Add to your Claude Desktop `mcpServers`:
   ```powershell
   & "C:\Program Files\Blender Foundation\Blender 5.0\blender.exe" -b --factory-startup --python D:\v3\bridge\blender_bridge.py
   ```
+
+The bridge runs an HTTP server on `127.0.0.1:8765` in a background thread and keeps Blender responsive. The MCP server works even if the bridge is down; bridge errors return JSON-RPC errors without stdout noise.
 
 ## Troubleshooting
 - Ensure nothing else binds `127.0.0.1:8765`; restart Blender after bridge crashes.

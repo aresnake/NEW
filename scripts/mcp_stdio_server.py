@@ -7,7 +7,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from new_mcp.server import StdioServer  # noqa: E402
+from blender_mcp.server import StdioServer  # noqa: E402
 
 
 def main() -> None:

@@ -6,9 +6,11 @@ import sys
 import threading
 import time
 from pathlib import Path
+import re
 
 ROOT = Path(__file__).resolve().parents[1]
 SERVER_CMD = [sys.executable, "-u", str(ROOT / "scripts" / "mcp_stdio_server.py")]
+NAME_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 
 
 def _start_server():
@@ -91,7 +93,20 @@ def test_stdio_protocol_roundtrip():
         assert isinstance(tools, list), "tools should be a list"
         names = {tool["name"] for tool in tools}
         assert "health" in names
-        assert "echo" in names
+        assert "blender-ping" in names
+        assert "blender-snapshot" in names
+        for tool in tools:
+            assert NAME_PATTERN.match(tool["name"]), f"tool name fails regex: {tool['name']}"
+
+        _send(proc, {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "health", "arguments": {}}})
+        health_line = _read(out_queue, timeout=1.0)
+        assert health_line is not None, "tools/call response missing"
+        health_resp = json.loads(health_line)
+        health_result = health_resp.get("result")
+        assert isinstance(health_result, dict)
+        assert isinstance(health_result.get("content"), list)
+        assert health_result.get("isError") is False
+        assert health_result["content"][0]["type"] == "text"
 
         time.sleep(0.1)
         assert _read(out_queue, timeout=0.2) is None, "unexpected extra output on stdout"
@@ -106,12 +121,12 @@ def test_stdio_protocol_roundtrip():
 
 def test_tools_call_bridge_errors_without_stdout_noise():
     proc, out_queue = _start_server_with_env(
-        {"NEW_MCP_BRIDGE_URL": "http://127.0.0.1:65500", "NEW_MCP_BRIDGE_TIMEOUT": "0.2"}
+        {"BLENDER_MCP_BRIDGE_URL": "http://127.0.0.1:65500", "BLENDER_MCP_BRIDGE_TIMEOUT": "0.2"}
     )
     try:
         _send(
             proc,
-            {"jsonrpc": "2.0", "id": 10, "method": "tools/call", "params": {"name": "blender.ping", "arguments": {}}},
+            {"jsonrpc": "2.0", "id": 10, "method": "tools/call", "params": {"name": "blender-ping", "arguments": {}}},
         )
         _send(
             proc,
@@ -119,7 +134,7 @@ def test_tools_call_bridge_errors_without_stdout_noise():
                 "jsonrpc": "2.0",
                 "id": 11,
                 "method": "tools/call",
-                "params": {"name": "blender.snapshot", "arguments": {}},
+                "params": {"name": "blender-snapshot", "arguments": {}},
             },
         )
         lines = [_read(out_queue, timeout=1.0), _read(out_queue, timeout=1.0)]
