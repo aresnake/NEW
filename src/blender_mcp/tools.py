@@ -1,15 +1,22 @@
 import json
 import os
 import re
+import sys
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
+import uuid
 
 BRIDGE_URL = os.environ.get("BLENDER_MCP_BRIDGE_URL") or os.environ.get("NEW_MCP_BRIDGE_URL", "http://127.0.0.1:8765")
 SERVER_VERSION = "0.1.0"
 NAME_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 DEBUG_EXEC_ENABLED = os.environ.get("BLENDER_MCP_DEBUG_EXEC") == "1" or os.environ.get("NEW_MCP_DEBUG_EXEC") == "1"
+ROOT_DIR = Path(__file__).resolve().parents[2]
+RUNS_DIR = ROOT_DIR / "runs"
+RUNS_FILE = RUNS_DIR / "actions.jsonl"
 
 
 def _get_timeout(default: float) -> float:
@@ -59,6 +66,35 @@ def _bridge_request(path: str, payload: Optional[Dict[str, Any]] = None, timeout
 
 def _make_tool_result(text: str, is_error: bool = False) -> Dict[str, Any]:
     return {"content": [{"type": "text", "text": text}], "isError": is_error}
+
+
+def _append_action(tool: str, arguments: Dict[str, Any], result: Dict[str, Any]) -> None:
+    try:
+        RUNS_DIR.mkdir(parents=True, exist_ok=True)
+        summary = ""
+        content = result.get("content")
+        if isinstance(content, list) and content:
+            first = content[0]
+            if isinstance(first, dict):
+                text_val = first.get("text")
+                if isinstance(text_val, str):
+                    summary = text_val[:200]
+        entry = {
+            "id": str(uuid.uuid4()),
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "tool": tool,
+            "arguments": arguments or {},
+            "isError": bool(result.get("isError")),
+            "summary": summary,
+        }
+        with RUNS_FILE.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception as exc:  # noqa: BLE001
+        try:
+            sys.stderr.write(f"[replay] failed to log action: {exc}\n")
+            sys.stderr.flush()
+        except Exception:
+            pass
 
 
 class ToolRegistry:
@@ -164,6 +200,27 @@ class ToolRegistry:
             },
             self._tool_intent_run,
         )
+        self._register(
+            "replay-list",
+            "List recent tool executions",
+            {
+                "type": "object",
+                "properties": {"limit": {"type": "integer"}},
+                "additionalProperties": False,
+            },
+            self._tool_replay_list,
+        )
+        self._register(
+            "replay-run",
+            "Re-run a previous tool execution by id",
+            {
+                "type": "object",
+                "properties": {"id": {"type": "string"}},
+                "required": ["id"],
+                "additionalProperties": False,
+            },
+            self._tool_replay_run,
+        )
 
     def list_tools(self) -> List[Dict[str, Any]]:
         return [
@@ -171,13 +228,20 @@ class ToolRegistry:
             for tool in self._tools.values()
         ]
 
-    def call_tool(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    def call_tool(self, name: str, arguments: Dict[str, Any], *, log_action: bool = True) -> Dict[str, Any]:
         if not isinstance(name, str):
             raise ToolError("Invalid tool name", code=-32602)
         if name not in self._tools:
             raise ToolError(f"Unknown tool: {name}", code=-32601)
         tool = self._tools[name]
-        return tool.handler(arguments or {})
+        result: Dict[str, Any]
+        try:
+            result = tool.handler(arguments or {})
+        except ToolError as exc:
+            result = _make_tool_result(str(exc), is_error=True)
+        if log_action and name not in ("replay-list", "replay-run"):
+            _append_action(name, arguments or {}, result)
+        return result
 
     def _tool_health(self, _: Dict[str, Any]) -> Dict[str, Any]:
         return _make_tool_result(f"ok (server {SERVER_VERSION})")
@@ -292,7 +356,66 @@ bpy.context.view_layer.objects.active = obj
         data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
         if not data.get("ok"):
             return _make_tool_result(data.get("error") or "Failed to create blockout", is_error=True)
-        return _make_tool_result("Blockout cube created, scaled to (2,1,1) at origin")
+            return _make_tool_result("Blockout cube created, scaled to (2,1,1) at origin")
+
+    def _read_actions(self) -> List[Dict[str, Any]]:
+        if not RUNS_FILE.exists():
+            return []
+        try:
+            lines = RUNS_FILE.read_text(encoding="utf-8").splitlines()
+            actions: List[Dict[str, Any]] = []
+            for line in lines:
+                try:
+                    actions.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+            return actions
+        except Exception as exc:  # noqa: BLE001
+            try:
+                sys.stderr.write(f"[replay] failed to read actions: {exc}\n")
+                sys.stderr.flush()
+            except Exception:
+                pass
+            return []
+
+    def _tool_replay_list(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        limit = args.get("limit", 50)
+        try:
+            limit_val = int(limit)
+        except Exception:
+            limit_val = 50
+        if limit_val <= 0:
+            limit_val = 50
+        actions = self._read_actions()
+        slice_actions = actions[-limit_val:] if actions else []
+        lines = []
+        for action in reversed(slice_actions):
+            lines.append(
+                f"{action.get('id','?')} | {action.get('ts','?')} | {action.get('tool','?')} | "
+                f"{'err' if action.get('isError') else 'ok'} | {action.get('summary','')}"
+            )
+        text = "\n".join(lines) if lines else "no actions"
+        return _make_tool_result(text, is_error=False)
+
+    def _tool_replay_run(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        action_id = args.get("id")
+        if not isinstance(action_id, str):
+            return _make_tool_result("id must be a string", is_error=True)
+        actions = self._read_actions()
+        target = None
+        for action in actions:
+            if action.get("id") == action_id:
+                target = action
+                break
+        if target is None:
+            return _make_tool_result("action id not found", is_error=True)
+        tool = target.get("tool")
+        arguments = target.get("arguments") or {}
+        if not isinstance(arguments, dict):
+            return _make_tool_result("invalid stored arguments", is_error=True)
+        if tool not in self._tools:
+            return _make_tool_result("stored tool unavailable", is_error=True)
+        return self.call_tool(tool, arguments)
 
     def _resolve_intent(self, text: str) -> Dict[str, Any]:
         if not isinstance(text, str):

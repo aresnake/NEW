@@ -1,0 +1,9 @@
+{"id": "f232bc71-0b26-4fdf-997e-b56506dfbae0", "ts": "2025-12-22T13:47:07.055804+00:00", "tool": "blender-ping", "arguments": {}, "isError": true, "summary": "Blender bridge unreachable"}
+{"id": "61805bc9-68af-490d-9d40-99e1bf25a589", "ts": "2025-12-22T13:47:07.581990+00:00", "tool": "blender-ping", "arguments": {}, "isError": true, "summary": "Blender bridge unreachable"}
+{"id": "041ef662-2bf2-4700-9cd0-3d809eed3dbd", "ts": "2025-12-22T13:47:08.018152+00:00", "tool": "health", "arguments": {}, "isError": false, "summary": "ok (server 0.1.0)"}
+{"id": "a5f1c1ce-6799-4125-8b9b-2d2a9fdc9fbe", "ts": "2025-12-22T13:47:08.451761+00:00", "tool": "intent-resolve", "arguments": {"text": "move cube 1 2 3"}, "isError": false, "summary": "{\"tool\": \"blender-move-object\", \"arguments\": {\"name\": \"Cube\", \"x\": 1.0, \"y\": 2.0, \"z\": 3.0}, \"confidence\": 0.8, \"notes\": \"move cube intent\"}"}
+{"id": "7e842395-79d2-42f1-af0a-77c2c24f7dad", "ts": "2025-12-22T13:47:08.797662+00:00", "tool": "blender-ping", "arguments": {}, "isError": true, "summary": "Blender bridge unreachable"}
+{"id": "6505e286-bae8-47af-9bf5-f0a3731e39b8", "ts": "2025-12-22T13:47:09.011813+00:00", "tool": "blender-snapshot", "arguments": {}, "isError": true, "summary": "Blender bridge unreachable"}
+{"id": "8f9a3ebb-8e27-4e2e-bf00-11a2730187bc", "ts": "2025-12-22T13:47:09.014385+00:00", "tool": "blender-exec", "arguments": {"code": "print('x')"}, "isError": true, "summary": "debug exec disabled"}
+{"id": "9b7e9a26-9bd7-41d6-b3eb-9a3503957e91", "ts": "2025-12-22T13:47:09.222588+00:00", "tool": "blender-add-cube", "arguments": {}, "isError": true, "summary": "Blender bridge unreachable"}
+{"id": "c014f4eb-5779-4e9c-a6b7-8c19a97ddc1d", "ts": "2025-12-22T13:47:09.225255+00:00", "tool": "intent-run", "arguments": {"text": "add cube"}, "isError": true, "summary": "Blender bridge unreachable"}

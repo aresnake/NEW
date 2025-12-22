@@ -101,6 +101,8 @@ def test_stdio_protocol_roundtrip():
         assert "macro-blockout" in names
         assert "intent-resolve" in names
         assert "intent-run" in names
+        assert "replay-list" in names
+        assert "replay-run" in names
         for tool in tools:
             assert NAME_PATTERN.match(tool["name"]), f"tool name fails regex: {tool['name']}"
 
