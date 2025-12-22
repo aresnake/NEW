@@ -112,6 +112,15 @@ def test_blender_tools_success_with_mock_bridge():
             {"id": 11, "method": "tools/call", "params": {"name": "blender-select-object", "arguments": {"name": "Cube"}}},
             {"id": 12, "method": "tools/call", "params": {"name": "blender-add-camera", "arguments": {}}},
             {"id": 13, "method": "tools/call", "params": {"name": "blender-add-light", "arguments": {}}},
+            {
+                "id": 14,
+                "method": "tools/call",
+                "params": {"name": "blender-assign-material", "arguments": {"object": "Cube", "material": "Mat"}},
+            },
+            {"id": 15, "method": "tools/call", "params": {"name": "blender-set-shading", "arguments": {"name": "Cube", "mode": "flat"}}},
+            {"id": 16, "method": "tools/call", "params": {"name": "blender-delete-all", "arguments": {"confirm": "DELETE_ALL"}}},
+            {"id": 17, "method": "tools/call", "params": {"name": "blender-reset-transform", "arguments": {"name": "Cube"}}},
+            {"id": 18, "method": "tools/call", "params": {"name": "blender-get-mesh-stats", "arguments": {"name": "Cube"}}},
         ]
         for call in calls:
             _send(proc, {"jsonrpc": "2.0", **call})
@@ -135,6 +144,11 @@ def test_blender_tools_arg_errors():
             {"id": 22, "name": "blender-duplicate-object", "arguments": {"name": 123}},
             {"id": 23, "name": "blender-add-light", "arguments": {"type": "laser"}},
             {"id": 24, "name": "blender-select-object", "arguments": {}},
+            {"id": 25, "name": "blender-assign-material", "arguments": {"object": 1, "material": "Mat"}},
+            {"id": 26, "name": "blender-set-shading", "arguments": {"name": "Cube", "mode": "auto"}},
+            {"id": 27, "name": "blender-delete-all", "arguments": {"confirm": "NOPE"}},
+            {"id": 28, "name": "blender-reset-transform", "arguments": {"name": 5}},
+            {"id": 29, "name": "blender-get-mesh-stats", "arguments": {"name": 5}},
         ]
         for call in bad_calls:
             _send(

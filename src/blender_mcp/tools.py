@@ -487,7 +487,7 @@ class ToolRegistry:
         )
         self._register(
             "blender-set-origin",
-            "Set object origin to geometry, cursor, or mass center",
+            "Set object origin to geometry, cursor, mass center, or bottom center",
             {
                 "type": "object",
                 "properties": {
@@ -557,6 +557,66 @@ class ToolRegistry:
                 "additionalProperties": False,
             },
             self._tool_rename_object,
+        )
+        self._register(
+            "blender-assign-material",
+            "Assign an existing material to an object",
+            {
+                "type": "object",
+                "properties": {
+                    "object": {"type": "string"},
+                    "material": {"type": "string"},
+                    "slot": {"type": "integer"},
+                    "create_slot": {"type": "boolean"},
+                },
+                "required": ["object", "material"],
+                "additionalProperties": False,
+            },
+            self._tool_assign_material,
+        )
+        self._register(
+            "blender-set-shading",
+            "Set object shading to flat or smooth",
+            {
+                "type": "object",
+                "properties": {"name": {"type": "string"}, "mode": {"type": "string"}},
+                "required": ["name", "mode"],
+                "additionalProperties": False,
+            },
+            self._tool_set_shading,
+        )
+        self._register(
+            "blender-delete-all",
+            "Delete all objects (safety confirm required)",
+            {
+                "type": "object",
+                "properties": {"confirm": {"type": "string"}},
+                "required": ["confirm"],
+                "additionalProperties": False,
+            },
+            self._tool_delete_all,
+        )
+        self._register(
+            "blender-reset-transform",
+            "Reset location/rotation/scale of an object",
+            {
+                "type": "object",
+                "properties": {"name": {"type": "string"}},
+                "required": ["name"],
+                "additionalProperties": False,
+            },
+            self._tool_reset_transform,
+        )
+        self._register(
+            "blender-get-mesh-stats",
+            "Get mesh vertex/edge/face/triangle counts",
+            {
+                "type": "object",
+                "properties": {"name": {"type": "string"}},
+                "required": ["name"],
+                "additionalProperties": False,
+            },
+            self._tool_get_mesh_stats,
         )
 
     def list_tools(self) -> List[Dict[str, Any]]:
@@ -1375,11 +1435,37 @@ bpy.context.active_object.name = name
             raise ToolError("name must be a string", code=-32602)
         if not isinstance(origin_type, str):
             raise ToolError("type must be a string", code=-32602)
-        valid_types = {"geometry": "ORIGIN_GEOMETRY", "cursor": "ORIGIN_CURSOR", "mass_center": "ORIGIN_CENTER_OF_MASS"}
+        valid_types = {
+            "geometry": "ORIGIN_GEOMETRY",
+            "cursor": "ORIGIN_CURSOR",
+            "mass_center": "ORIGIN_CENTER_OF_MASS",
+            "bottom_center": "BOTTOM_CENTER",
+        }
         if origin_type not in valid_types:
             raise ToolError(f"type must be one of {list(valid_types.keys())}", code=-32602)
-        blender_type = valid_types[origin_type]
-        code = f"""
+        if origin_type == "bottom_center":
+            code = f"""
+import bpy, mathutils
+name = {json.dumps(name)}
+obj = bpy.data.objects.get(name)
+if obj is None:
+    raise ValueError(f"Object {{name}} not found")
+coords = [obj.matrix_world @ mathutils.Vector(corner) for corner in obj.bound_box]
+if not coords:
+    raise ValueError("Object has no bounding box")
+xs = [c.x for c in coords]; ys = [c.y for c in coords]; zs = [c.z for c in coords]
+target = mathutils.Vector((sum(xs)/len(xs), sum(ys)/len(ys), min(zs)))
+cur = obj.matrix_world.to_translation()
+delta = target - cur
+if hasattr(obj.data, "transform"):
+    obj.data.transform(mathutils.Matrix.Translation(-obj.matrix_world.inverted() @ delta))
+    obj.location = obj.location + delta
+else:
+    raise ValueError("Object has no geometry to transform")
+"""
+        else:
+            blender_type = valid_types[origin_type]
+            code = f"""
 import bpy
 name = {json.dumps(name)}
 obj = bpy.data.objects.get(name)
@@ -1431,6 +1517,134 @@ bpy.ops.object.transform_apply(location={location}, rotation={rotation}, scale={
             parts.append("scale")
         applied = ", ".join(parts) if parts else "none"
         return _make_tool_result(f"Applied transforms ({applied}) to {name}", is_error=False)
+
+    def _tool_assign_material(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        obj_name = args.get("object")
+        mat_name = args.get("material")
+        slot = args.get("slot", 0)
+        create_slot = args.get("create_slot", True)
+        if not isinstance(obj_name, str):
+            raise ToolError("object must be a string", code=-32602)
+        if not isinstance(mat_name, str):
+            raise ToolError("material must be a string", code=-32602)
+        try:
+            slot_index = int(slot)
+        except Exception:
+            raise ToolError("slot must be an integer", code=-32602)
+        if slot_index < 0:
+            raise ToolError("slot must be >= 0", code=-32602)
+        if not isinstance(create_slot, bool):
+            raise ToolError("create_slot must be a boolean", code=-32602)
+        code = f"""
+import bpy
+obj = bpy.data.objects.get({json.dumps(obj_name)})
+if obj is None:
+    raise ValueError("Object not found")
+mat = bpy.data.materials.get({json.dumps(mat_name)})
+if mat is None:
+    raise ValueError("Material not found")
+slot_index = {slot_index}
+create_slot = {create_slot}
+slots = obj.data.materials
+if slot_index >= len(slots):
+    if not create_slot:
+        raise ValueError("Material slot does not exist")
+    while len(slots) <= slot_index:
+        slots.append(None)
+slots[slot_index] = mat
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to assign material", is_error=True)
+        return _make_tool_result(f"Assigned {mat_name} to {obj_name} (slot {slot_index})", is_error=False)
+
+    def _tool_set_shading(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        name = args.get("name")
+        mode = args.get("mode")
+        if not isinstance(name, str):
+            raise ToolError("name must be a string", code=-32602)
+        if mode not in ("flat", "smooth"):
+            raise ToolError("mode must be 'flat' or 'smooth'", code=-32602)
+        use_smooth = mode == "smooth"
+        code = f"""
+import bpy
+name = {json.dumps(name)}
+obj = bpy.data.objects.get(name)
+if obj is None:
+    raise ValueError("Object not found")
+if not hasattr(obj.data, "polygons"):
+    raise ValueError("Object has no polygons")
+for poly in obj.data.polygons:
+    poly.use_smooth = {use_smooth}
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to set shading", is_error=True)
+        return _make_tool_result(f"Set shading of {name} to {mode}", is_error=False)
+
+    def _tool_delete_all(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        confirm = args.get("confirm")
+        if confirm != "DELETE_ALL":
+            raise ToolError("confirm must equal 'DELETE_ALL'", code=-32602)
+        code = """
+import bpy
+bpy.ops.object.select_all(action='SELECT')
+bpy.ops.object.delete(use_global=False)
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to delete all", is_error=True)
+        return _make_tool_result("Deleted all objects", is_error=False)
+
+    def _tool_reset_transform(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        name = args.get("name")
+        if not isinstance(name, str):
+            raise ToolError("name must be a string", code=-32602)
+        code = f"""
+import bpy
+name = {json.dumps(name)}
+obj = bpy.data.objects.get(name)
+if obj is None:
+    raise ValueError("Object not found")
+obj.location = (0.0, 0.0, 0.0)
+obj.rotation_euler = (0.0, 0.0, 0.0)
+obj.scale = (1.0, 1.0, 1.0)
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to reset transform", is_error=True)
+        return _make_tool_result(f"Reset transforms for {name}", is_error=False)
+
+    def _tool_get_mesh_stats(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        name = args.get("name")
+        if not isinstance(name, str):
+            raise ToolError("name must be a string", code=-32602)
+        code = f"""
+import bpy
+name = {json.dumps(name)}
+obj = bpy.data.objects.get(name)
+if obj is None:
+    raise ValueError("Object not found")
+if obj.type != 'MESH':
+    raise ValueError("Object is not a mesh")
+mesh = obj.data
+mesh.calc_loop_triangles()
+result = {{
+    "verts": len(mesh.vertices),
+    "edges": len(mesh.edges),
+    "faces": len(mesh.polygons),
+    "triangles": len(mesh.loop_triangles),
+}}
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to get mesh stats", is_error=True)
+        info = data.get("result")
+        if isinstance(info, dict):
+            text = f"{name}: verts={info.get('verts')} edges={info.get('edges')} faces={info.get('faces')} tris={info.get('triangles')}"
+        else:
+            text = f"Mesh stats for {name}"
+        return _make_tool_result(text, is_error=False)
 
     def _validate_rgba(self, value: Any, *, name: str) -> Optional[List[float]]:
         if value is None:

@@ -112,6 +112,11 @@ def test_stdio_protocol_roundtrip():
         assert "blender-select-object" in names
         assert "blender-add-camera" in names
         assert "blender-add-light" in names
+        assert "blender-assign-material" in names
+        assert "blender-set-shading" in names
+        assert "blender-delete-all" in names
+        assert "blender-reset-transform" in names
+        assert "blender-get-mesh-stats" in names
         assert "intent-resolve" in names
         assert "intent-run" in names
         assert "replay-list" in names

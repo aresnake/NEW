@@ -36,6 +36,11 @@ Add to your Claude Desktop `mcpServers`:
 - `blender-create-material`
 - `blender-export`
 - `blender-rename-object`
+- `blender-assign-material`
+- `blender-set-shading`
+- `blender-delete-all`
+- `blender-reset-transform`
+- `blender-get-mesh-stats`
 - `macro-blockout`
 - `intent-resolve`
 - `intent-run`
@@ -172,6 +177,26 @@ Examples:
 - blender-add-light:
   ```json
   {"jsonrpc":"2.0","id":36,"method":"tools/call","params":{"name":"blender-add-light","arguments":{"type":"sun","power":2.0,"location":[0,0,5],"rotation":[-45,0,0],"name":"KeyLight"}}}
+  ```
+- blender-assign-material:
+  ```json
+  {"jsonrpc":"2.0","id":37,"method":"tools/call","params":{"name":"blender-assign-material","arguments":{"object":"Cube","material":"LampMat","slot":0,"create_slot":true}}}
+  ```
+- blender-set-shading:
+  ```json
+  {"jsonrpc":"2.0","id":38,"method":"tools/call","params":{"name":"blender-set-shading","arguments":{"name":"Cube","mode":"smooth"}}}
+  ```
+- blender-delete-all:
+  ```json
+  {"jsonrpc":"2.0","id":39,"method":"tools/call","params":{"name":"blender-delete-all","arguments":{"confirm":"DELETE_ALL"}}}
+  ```
+- blender-reset-transform:
+  ```json
+  {"jsonrpc":"2.0","id":40,"method":"tools/call","params":{"name":"blender-reset-transform","arguments":{"name":"Cube"}}}
+  ```
+- blender-get-mesh-stats:
+  ```json
+  {"jsonrpc":"2.0","id":41,"method":"tools/call","params":{"name":"blender-get-mesh-stats","arguments":{"name":"Cube"}}}
   ```
 
 Debugging:
