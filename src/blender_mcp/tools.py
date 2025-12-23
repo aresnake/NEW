@@ -749,6 +749,82 @@ class ToolRegistry:
             },
             self._tool_uv_unwrap,
         )
+        self._register(
+            "blender-list-materials",
+            "List all materials in the scene",
+            {"type": "object", "properties": {}, "additionalProperties": False},
+            self._tool_list_materials,
+        )
+        self._register(
+            "blender-list-material-slots",
+            "List material slots for an object",
+            {
+                "type": "object",
+                "properties": {"name": {"type": "string"}},
+                "required": ["name"],
+                "additionalProperties": False,
+            },
+            self._tool_list_material_slots,
+        )
+        self._register(
+            "blender-assign-image-texture",
+            "Assign an image texture to a material slot",
+            {
+                "type": "object",
+                "properties": {
+                    "object": {"type": "string"},
+                    "material": {"type": "string"},
+                    "image_path": {"type": "string"},
+                    "target": {"type": "string"},
+                    "create_material": {"type": "boolean"},
+                    "create_slot": {"type": "boolean"},
+                },
+                "required": ["object", "material", "image_path"],
+                "additionalProperties": False,
+            },
+            self._tool_assign_image_texture,
+        )
+        self._register(
+            "blender-parent",
+            "Parent one object to another",
+            {
+                "type": "object",
+                "properties": {
+                    "child": {"type": "string"},
+                    "parent": {"type": "string"},
+                    "keep_transform": {"type": "boolean"},
+                },
+                "required": ["child", "parent"],
+                "additionalProperties": False,
+            },
+            self._tool_parent,
+        )
+        self._register(
+            "blender-move-to-collection",
+            "Move an object to a collection (links without unlinking others)",
+            {
+                "type": "object",
+                "properties": {"name": {"type": "string"}, "collection": {"type": "string"}, "create": {"type": "boolean"}},
+                "required": ["name", "collection"],
+                "additionalProperties": False,
+            },
+            self._tool_move_to_collection,
+        )
+        self._register(
+            "blender-align-to-axis",
+            "Align object rotation or location to axis",
+            {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "axis": {"type": "string"},
+                    "mode": {"type": "string"},
+                },
+                "required": ["name", "axis"],
+                "additionalProperties": False,
+            },
+            self._tool_align_to_axis,
+        )
 
     def list_tools(self) -> List[Dict[str, Any]]:
         return [
@@ -1689,6 +1765,100 @@ slots[slot_index] = mat
             return _make_tool_result(data.get("error") or "Failed to assign material", is_error=True)
         return _make_tool_result(f"Assigned {mat_name} to {obj_name} (slot {slot_index})", is_error=False)
 
+    def _tool_assign_image_texture(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        obj_name = args.get("object")
+        mat_name = args.get("material")
+        image_path = args.get("image_path")
+        target = (args.get("target") or "BASE_COLOR").upper()
+        create_material = args.get("create_material", False)
+        create_slot = args.get("create_slot", True)
+        if not isinstance(obj_name, str):
+            raise ToolError("object must be a string", code=-32602)
+        if not isinstance(mat_name, str):
+            raise ToolError("material must be a string", code=-32602)
+        if not isinstance(image_path, str):
+            raise ToolError("image_path must be a string", code=-32602)
+        valid_targets = {"BASE_COLOR", "ROUGHNESS", "NORMAL"}
+        if target not in valid_targets:
+            raise ToolError("target must be BASE_COLOR, ROUGHNESS, or NORMAL", code=-32602)
+        if not isinstance(create_material, bool):
+            raise ToolError("create_material must be a boolean", code=-32602)
+        if not isinstance(create_slot, bool):
+            raise ToolError("create_slot must be a boolean", code=-32602)
+        code = f"""
+import bpy
+import os
+obj_name = {json.dumps(obj_name)}
+mat_name = {json.dumps(mat_name)}
+image_path = {json.dumps(image_path)}
+target = {json.dumps(target)}
+create_material = {create_material}
+create_slot = {create_slot}
+obj = bpy.data.objects.get(obj_name)
+if obj is None:
+    raise ValueError("Object not found")
+mat = bpy.data.materials.get(mat_name)
+if mat is None:
+    if not create_material:
+        raise ValueError("Material not found")
+    mat = bpy.data.materials.new(name=mat_name)
+    mat.use_nodes = True
+if not hasattr(obj.data, "materials"):
+    raise ValueError("Object has no material slots")
+slots = obj.data.materials
+if mat.name not in [m.name for m in slots if m]:
+    if not slots:
+        slots.append(mat)
+    else:
+        if create_slot:
+            slots.append(None)
+        slots[0] = mat if not slots[0] else slots[0]
+        if mat not in slots:
+            for i, existing in enumerate(slots):
+                if existing is None:
+                    slots[i] = mat
+                    break
+            else:
+                slots.append(mat)
+img = bpy.data.images.load(image_path, check_existing=True)
+if mat.node_tree is None:
+    mat.use_nodes = True
+nodes = mat.node_tree.nodes
+links = mat.node_tree.links
+bsdf = next((n for n in nodes if n.type == 'BSDF_PRINCIPLED'), None)
+if bsdf is None:
+    bsdf = nodes.new(type='ShaderNodeBsdfPrincipled')
+output = next((n for n in nodes if n.type == 'OUTPUT_MATERIAL'), None)
+if output is None:
+    output = nodes.new(type='ShaderNodeOutputMaterial')
+tex_node = nodes.new(type='ShaderNodeTexImage')
+tex_node.image = img
+tex_node.location = (-400, 0)
+bsdf.location = (-100, 0)
+output.location = (200, 0)
+if target == "BASE_COLOR":
+    if hasattr(tex_node, "image") and hasattr(tex_node.image, "colorspace_settings"):
+        tex_node.image.colorspace_settings.name = "sRGB"
+    links.new(tex_node.outputs.get("Color"), bsdf.inputs.get("Base Color"))
+elif target == "ROUGHNESS":
+    if hasattr(tex_node, "image") and hasattr(tex_node.image, "colorspace_settings"):
+        tex_node.image.colorspace_settings.name = "Non-Color"
+    links.new(tex_node.outputs.get("Color"), bsdf.inputs.get("Roughness"))
+elif target == "NORMAL":
+    if hasattr(tex_node, "image") and hasattr(tex_node.image, "colorspace_settings"):
+        tex_node.image.colorspace_settings.name = "Non-Color"
+    normal_node = nodes.new(type='ShaderNodeNormalMap')
+    normal_node.location = (-150, -200)
+    links.new(tex_node.outputs.get("Color"), normal_node.inputs.get("Color"))
+    links.new(normal_node.outputs.get("Normal"), bsdf.inputs.get("Normal"))
+if not any(link.to_node == output for link in links):
+    links.new(bsdf.outputs.get("BSDF"), output.inputs.get("Surface"))
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=10.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to assign image texture", is_error=True)
+        return _make_tool_result(f"Assigned {target} texture to {mat_name} on {obj_name}", is_error=False)
+
     def _tool_set_shading(self, args: Dict[str, Any]) -> Dict[str, Any]:
         name = args.get("name")
         mode = args.get("mode")
@@ -2337,6 +2507,105 @@ bpy.ops.object.modifier_apply(modifier=mod.name)
                 raise ToolError(f"{name} must be an array of 4 numbers (RGBA)", code=-32602)
         return out
 
+    def _tool_parent(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        child = args.get("child")
+        parent = args.get("parent")
+        keep_transform = args.get("keep_transform", True)
+        if not isinstance(child, str):
+            raise ToolError("child must be a string", code=-32602)
+        if not isinstance(parent, str):
+            raise ToolError("parent must be a string", code=-32602)
+        if not isinstance(keep_transform, bool):
+            raise ToolError("keep_transform must be a boolean", code=-32602)
+        code = f"""
+import bpy
+child_name = {json.dumps(child)}
+parent_name = {json.dumps(parent)}
+keep_transform = {keep_transform}
+child_obj = bpy.data.objects.get(child_name)
+if child_obj is None:
+    raise ValueError("Child not found")
+parent_obj = bpy.data.objects.get(parent_name)
+if parent_obj is None:
+    raise ValueError("Parent not found")
+current_matrix = child_obj.matrix_world.copy()
+child_obj.parent = parent_obj
+if keep_transform:
+    child_obj.matrix_world = current_matrix
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to parent object", is_error=True)
+        return _make_tool_result(f"Parented {child} to {parent}", is_error=False)
+
+    def _tool_move_to_collection(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        name = args.get("name")
+        collection = args.get("collection")
+        create = args.get("create", True)
+        if not isinstance(name, str):
+            raise ToolError("name must be a string", code=-32602)
+        if not isinstance(collection, str):
+            raise ToolError("collection must be a string", code=-32602)
+        if not isinstance(create, bool):
+            raise ToolError("create must be a boolean", code=-32602)
+        code = f"""
+import bpy
+name = {json.dumps(name)}
+collection_name = {json.dumps(collection)}
+create = {create}
+obj = bpy.data.objects.get(name)
+if obj is None:
+    raise ValueError("Object not found")
+col = bpy.data.collections.get(collection_name)
+if col is None:
+    if not create:
+        raise ValueError("Collection not found")
+    col = bpy.data.collections.new(collection_name)
+    bpy.context.scene.collection.children.link(col)
+if obj.name not in col.objects:
+    col.objects.link(obj)
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to move to collection", is_error=True)
+        return _make_tool_result(f"Moved {name} to collection {collection}", is_error=False)
+
+    def _tool_align_to_axis(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        name = args.get("name")
+        axis = (args.get("axis") or "").upper()
+        mode = (args.get("mode") or "ROTATION_ZERO").upper()
+        if not isinstance(name, str):
+            raise ToolError("name must be a string", code=-32602)
+        if axis not in ("X", "Y", "Z"):
+            raise ToolError("axis must be X, Y, or Z", code=-32602)
+        if mode not in ("ROTATION_ZERO", "LOCATION_ZERO"):
+            raise ToolError("mode must be ROTATION_ZERO or LOCATION_ZERO", code=-32602)
+        code = f"""
+import bpy
+name = {json.dumps(name)}
+axis = {json.dumps(axis)}
+mode = {json.dumps(mode)}
+obj = bpy.data.objects.get(name)
+if obj is None:
+    raise ValueError("Object not found")
+if mode == "ROTATION_ZERO":
+    obj.rotation_euler = (0.0, 0.0, 0.0)
+else:
+    loc = list(obj.location)
+    if axis == "X":
+        loc[0] = 0.0
+    elif axis == "Y":
+        loc[1] = 0.0
+    elif axis == "Z":
+        loc[2] = 0.0
+    obj.location = tuple(loc)
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to align object", is_error=True)
+        return _make_tool_result(f"Aligned {name} ({mode} {axis})", is_error=False)
+
+
     def _tool_create_material(self, args: Dict[str, Any]) -> Dict[str, Any]:
         name = args.get("name")
         base_color = self._validate_rgba(args.get("base_color"), name="base_color")
@@ -2363,6 +2632,49 @@ links.new(bsdf.outputs['BSDF'], output.inputs['Surface'])
         if not data.get("ok"):
             return _make_tool_result(data.get("error") or "Failed to create material", is_error=True)
         return _make_tool_result(f"Created material {name}", is_error=False)
+
+    def _tool_list_materials(self, _: Dict[str, Any]) -> Dict[str, Any]:
+        code = """
+import bpy
+result = [mat.name for mat in bpy.data.materials]
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to list materials", is_error=True)
+        mats = data.get("result") or []
+        if isinstance(mats, list) and mats:
+            text = ", ".join(mats)
+        else:
+            text = "no materials"
+        return _make_tool_result(text, is_error=False)
+
+    def _tool_list_material_slots(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        name = args.get("name")
+        if not isinstance(name, str):
+            raise ToolError("name must be a string", code=-32602)
+        code = f"""
+import bpy
+name = {json.dumps(name)}
+obj = bpy.data.objects.get(name)
+if obj is None:
+    raise ValueError("Object not found")
+if not hasattr(obj.data, "materials"):
+    raise ValueError("Object has no material slots")
+slots = []
+for idx, mat in enumerate(obj.data.materials):
+    slots.append({{"index": idx, "material": mat.name if mat else None}})
+result = slots
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to list material slots", is_error=True)
+        slots = data.get("result") or []
+        if isinstance(slots, list) and slots:
+            parts = [f"{item.get('index')}: {item.get('material')}" for item in slots if isinstance(item, dict)]
+            text = ", ".join(parts) if parts else "no slots"
+        else:
+            text = "no slots"
+        return _make_tool_result(text, is_error=False)
 
     def _tool_export(self, args: Dict[str, Any]) -> Dict[str, Any]:
         path = args.get("path")
