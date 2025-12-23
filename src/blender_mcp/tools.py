@@ -701,6 +701,39 @@ class ToolRegistry:
             self._tool_bevel_edges,
         )
         self._register(
+            "blender-merge-by-distance",
+            "Merge mesh vertices by distance",
+            {
+                "type": "object",
+                "properties": {"name": {"type": "string"}, "distance": {"type": "number"}},
+                "required": ["name"],
+                "additionalProperties": False,
+            },
+            self._tool_merge_by_distance,
+        )
+        self._register(
+            "blender-recalc-normals",
+            "Recalculate mesh normals (outside or inside)",
+            {
+                "type": "object",
+                "properties": {"name": {"type": "string"}, "inside": {"type": "boolean"}},
+                "required": ["name"],
+                "additionalProperties": False,
+            },
+            self._tool_recalc_normals,
+        )
+        self._register(
+            "blender-triangulate",
+            "Triangulate mesh faces",
+            {
+                "type": "object",
+                "properties": {"name": {"type": "string"}, "method": {"type": "string"}},
+                "required": ["name"],
+                "additionalProperties": False,
+            },
+            self._tool_triangulate,
+        )
+        self._register(
             "blender-uv-unwrap",
             "Mark seams (optional) and unwrap UVs for a mesh",
             {
@@ -1904,6 +1937,114 @@ mesh.update()
             return _make_tool_result(data.get("error") or "Failed to bevel edges", is_error=True)
         return _make_tool_result(f"Beveled edges on {name}", is_error=False)
 
+    def _tool_merge_by_distance(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        name = args.get("name")
+        distance = args.get("distance", 0.0001)
+        if not isinstance(name, str):
+            raise ToolError("name must be a string", code=-32602)
+        try:
+            distance_f = float(distance)
+        except Exception:
+            raise ToolError("distance must be a number", code=-32602)
+        if distance_f < 0:
+            raise ToolError("distance must be >= 0", code=-32602)
+        code = f"""
+import bpy
+name = {json.dumps(name)}
+distance = {distance_f}
+obj = bpy.data.objects.get(name)
+if obj is None:
+    raise ValueError("Object not found")
+if obj.type != 'MESH':
+    raise ValueError("Object is not a mesh")
+initial_mode = obj.mode
+restore_mode = initial_mode if initial_mode in {{'EDIT', 'OBJECT'}} else 'OBJECT'
+bpy.ops.object.mode_set(mode='OBJECT')
+bpy.ops.object.select_all(action='DESELECT')
+obj.select_set(True)
+bpy.context.view_layer.objects.active = obj
+try:
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.mesh.merge_by_distance(distance=distance)
+finally:
+    bpy.ops.object.mode_set(mode=restore_mode)
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=8.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to merge by distance", is_error=True)
+        return _make_tool_result(f"Merged {name} by distance {distance_f}", is_error=False)
+
+    def _tool_recalc_normals(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        name = args.get("name")
+        inside = args.get("inside", False)
+        if not isinstance(name, str):
+            raise ToolError("name must be a string", code=-32602)
+        if not isinstance(inside, bool):
+            raise ToolError("inside must be a boolean", code=-32602)
+        code = f"""
+import bpy
+name = {json.dumps(name)}
+inside = {inside}
+obj = bpy.data.objects.get(name)
+if obj is None:
+    raise ValueError("Object not found")
+if obj.type != 'MESH':
+    raise ValueError("Object is not a mesh")
+initial_mode = obj.mode
+restore_mode = initial_mode if initial_mode in {{'EDIT', 'OBJECT'}} else 'OBJECT'
+bpy.ops.object.mode_set(mode='OBJECT')
+bpy.ops.object.select_all(action='DESELECT')
+obj.select_set(True)
+bpy.context.view_layer.objects.active = obj
+try:
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.mesh.normals_make_consistent(inside=inside)
+finally:
+    bpy.ops.object.mode_set(mode=restore_mode)
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=8.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to recalc normals", is_error=True)
+        side = "inside" if inside else "outside"
+        return _make_tool_result(f"Recalculated {name} normals ({side})", is_error=False)
+
+    def _tool_triangulate(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        name = args.get("name")
+        method = (args.get("method") or "BEAUTY").upper()
+        valid_methods = {"BEAUTY", "FIXED", "FIXED_ALTERNATE", "SHORTEST_DIAGONAL"}
+        if not isinstance(name, str):
+            raise ToolError("name must be a string", code=-32602)
+        if method not in valid_methods:
+            raise ToolError("method must be BEAUTY, FIXED, FIXED_ALTERNATE, or SHORTEST_DIAGONAL", code=-32602)
+        code = f"""
+import bpy
+name = {json.dumps(name)}
+method = {json.dumps(method)}
+obj = bpy.data.objects.get(name)
+if obj is None:
+    raise ValueError("Object not found")
+if obj.type != 'MESH':
+    raise ValueError("Object is not a mesh")
+initial_mode = obj.mode
+restore_mode = initial_mode if initial_mode in {{'EDIT', 'OBJECT'}} else 'OBJECT'
+bpy.ops.object.mode_set(mode='OBJECT')
+bpy.ops.object.select_all(action='DESELECT')
+obj.select_set(True)
+bpy.context.view_layer.objects.active = obj
+try:
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.mesh.quads_convert_to_tris(quad_method=method, ngon_method='BEAUTY')
+finally:
+    bpy.ops.object.mode_set(mode=restore_mode)
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=8.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to triangulate", is_error=True)
+        return _make_tool_result(f"Triangulated {name} with {method}", is_error=False)
+
     def _tool_uv_unwrap(self, args: Dict[str, Any]) -> Dict[str, Any]:
         name = args.get("name")
         method = (args.get("method") or "ANGLE_BASED").upper()
@@ -1970,9 +2111,11 @@ finally:
             "subdivision": "SUBSURF",
             "boolean": "BOOLEAN",
             "decimate": "DECIMATE",
+            "weld": "WELD",
+            "triangulate": "TRIANGULATE",
         }
         if mod_type not in type_map:
-            raise ToolError("type must be one of mirror,array,solidify,bevel,subdivision,boolean,decimate", code=-32602)
+            raise ToolError("type must be one of mirror,array,solidify,bevel,subdivision,boolean,decimate,weld,triangulate", code=-32602)
         clean_settings: Dict[str, Any] = {}
         if mod_type == "mirror":
             for axis_key in ("use_axis_x", "use_axis_y", "use_axis_z"):
@@ -2043,6 +2186,26 @@ finally:
                 except Exception:
                     raise ToolError("ratio must be a number", code=-32602)
                 clean_settings["ratio"] = r
+        if mod_type == "weld":
+            merge_threshold = settings.get("merge_threshold")
+            if merge_threshold is not None:
+                try:
+                    clean_settings["merge_threshold"] = float(merge_threshold)
+                except Exception:
+                    raise ToolError("merge_threshold must be a number", code=-32602)
+        if mod_type == "triangulate":
+            quad_method = settings.get("quad_method")
+            ngon_method = settings.get("ngon_method")
+            quad_valid = {"BEAUTY", "FIXED", "FIXED_ALTERNATE", "SHORTEST_DIAGONAL"}
+            ngon_valid = {"BEAUTY", "FIXED", "FIXED_ALTERNATE", "SHORTEST_DIAGONAL"}
+            if quad_method is not None:
+                if not isinstance(quad_method, str) or quad_method.upper() not in quad_valid:
+                    raise ToolError("quad_method must be a valid triangulate method", code=-32602)
+                clean_settings["quad_method"] = quad_method.upper()
+            if ngon_method is not None:
+                if not isinstance(ngon_method, str) or ngon_method.upper() not in ngon_valid:
+                    raise ToolError("ngon_method must be a valid triangulate method", code=-32602)
+                clean_settings["ngon_method"] = ngon_method.upper()
         mod_bpy_type = type_map[mod_type]
         code = f"""
 import bpy
@@ -2082,6 +2245,14 @@ elif {json.dumps(mod_type)} == "boolean":
 elif {json.dumps(mod_type)} == "decimate":
     if "ratio" in settings:
         mod.ratio = settings["ratio"]
+elif {json.dumps(mod_type)} == "weld":
+    if "merge_threshold" in settings:
+        mod.merge_threshold = settings["merge_threshold"]
+elif {json.dumps(mod_type)} == "triangulate":
+    if "quad_method" in settings:
+        mod.quad_method = settings["quad_method"]
+    if "ngon_method" in settings:
+        mod.ngon_method = settings["ngon_method"]
 """
         data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
         if not data.get("ok"):
