@@ -700,6 +700,22 @@ class ToolRegistry:
             },
             self._tool_bevel_edges,
         )
+        self._register(
+            "blender-uv-unwrap",
+            "Mark seams (optional) and unwrap UVs for a mesh",
+            {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "method": {"type": "string"},
+                    "margin": {"type": "number"},
+                    "mark_seams": {"type": "boolean"},
+                },
+                "required": ["name"],
+                "additionalProperties": False,
+            },
+            self._tool_uv_unwrap,
+        )
 
     def list_tools(self) -> List[Dict[str, Any]]:
         return [
@@ -1887,6 +1903,54 @@ mesh.update()
         if not data.get("ok"):
             return _make_tool_result(data.get("error") or "Failed to bevel edges", is_error=True)
         return _make_tool_result(f"Beveled edges on {name}", is_error=False)
+
+    def _tool_uv_unwrap(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        name = args.get("name")
+        method = (args.get("method") or "ANGLE_BASED").upper()
+        margin = args.get("margin", 0.02)
+        mark_seams = args.get("mark_seams", True)
+        if not isinstance(name, str):
+            raise ToolError("name must be a string", code=-32602)
+        if method not in ("ANGLE_BASED", "CONFORMAL"):
+            raise ToolError("method must be ANGLE_BASED or CONFORMAL", code=-32602)
+        try:
+            margin_f = float(margin)
+        except Exception:
+            raise ToolError("margin must be a number", code=-32602)
+        if margin_f < 0.0 or margin_f > 1.0:
+            raise ToolError("margin must be between 0 and 1", code=-32602)
+        if not isinstance(mark_seams, bool):
+            raise ToolError("mark_seams must be a boolean", code=-32602)
+        code = f"""
+import bpy
+name = {json.dumps(name)}
+method = {json.dumps(method)}
+margin = {margin_f}
+mark_seams = {mark_seams}
+obj = bpy.data.objects.get(name)
+if obj is None:
+    raise ValueError("Object not found")
+if obj.type != 'MESH':
+    raise ValueError("Object is not a mesh")
+initial_mode = obj.mode
+restore_mode = initial_mode if initial_mode in {{'EDIT', 'OBJECT'}} else 'OBJECT'
+bpy.ops.object.mode_set(mode='OBJECT')
+bpy.ops.object.select_all(action='DESELECT')
+obj.select_set(True)
+bpy.context.view_layer.objects.active = obj
+try:
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_all(action='SELECT')
+    if mark_seams:
+        bpy.ops.mesh.mark_seam(clear=False)
+    bpy.ops.uv.unwrap(method=method, margin=margin)
+finally:
+    bpy.ops.object.mode_set(mode=restore_mode)
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=8.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to unwrap UVs", is_error=True)
+        return _make_tool_result(f"Unwrapped {name} with {method} (margin={margin_f})", is_error=False)
 
     def _tool_add_modifier(self, args: Dict[str, Any]) -> Dict[str, Any]:
         name = args.get("name")
