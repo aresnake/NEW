@@ -4,6 +4,7 @@ import re
 import sys
 import urllib.error
 import urllib.request
+import warnings
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,6 +21,9 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 RUNS_DIR = ROOT_DIR / "runs"
 RUNS_FILE = RUNS_DIR / "actions.jsonl"
 REQUESTS_FILE = RUNS_DIR / "requests.jsonl"
+TOOL_REQUEST_DIR = Path(os.environ.get("TOOL_REQUEST_DATA_DIR") or (ROOT_DIR / "data"))
+TOOL_REQUEST_FILE = TOOL_REQUEST_DIR / "tool_requests.jsonl"
+TOOL_REQUEST_UPDATES_FILE = TOOL_REQUEST_DIR / "tool_requests_updates.jsonl"
 
 
 def _get_timeout(default: float) -> float:
@@ -45,6 +49,205 @@ class Tool:
     description: str
     input_schema: Dict[str, Any]
     handler: Callable[[Dict[str, Any]], Dict[str, Any]]
+
+
+class ToolRequestStore:
+    def __init__(self) -> None:
+        self.requests: Dict[str, Dict[str, Any]] = {}
+        self._load()
+
+    def _load_jsonl(self, path: Path) -> List[Dict[str, Any]]:
+        items: List[Dict[str, Any]] = []
+        if not path.exists():
+            return items
+        try:
+            for line in path.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    items.append(json.loads(line))
+                except json.JSONDecodeError as exc:
+                    warnings.warn(f"tool-request: skipping corrupted line in {path.name}: {exc}")
+        except Exception as exc:  # noqa: BLE001
+            warnings.warn(f"tool-request: failed reading {path}: {exc}")
+        return items
+
+    def _load(self) -> None:
+        TOOL_REQUEST_DIR.mkdir(parents=True, exist_ok=True)
+        base_items = self._load_jsonl(TOOL_REQUEST_FILE)
+        updates = self._load_jsonl(TOOL_REQUEST_UPDATES_FILE)
+        for item in base_items:
+            if isinstance(item, dict) and "id" in item:
+                self.requests[item["id"]] = item
+        for upd in updates:
+            self._apply_update_record(upd)
+
+    def _apply_update_record(self, record: Dict[str, Any]) -> None:
+        if not isinstance(record, dict):
+            return
+        req_id = record.get("id")
+        changes = record.get("changes") or {}
+        if not isinstance(req_id, str) or req_id not in self.requests or not isinstance(changes, dict):
+            return
+        current = self.requests[req_id].copy()
+        current.update(changes)
+        self.requests[req_id] = current
+
+    def _write_jsonl(self, path: Path, entry: Dict[str, Any]) -> None:
+        TOOL_REQUEST_DIR.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+    def _validate_new(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        enums = {
+            "source": {"claude", "codex", "manual"},
+            "type": {"bug_fix", "new_tool", "enhancement", "deprecation"},
+            "priority": {"critical", "high", "medium", "low"},
+            "domain": {
+                "mesh",
+                "object",
+                "selection",
+                "material",
+                "modifier",
+                "scene",
+                "render",
+                "nodes",
+                "uv",
+                "anim",
+                "io",
+                "system",
+            },
+            "status": {"pending", "triaged", "accepted", "implemented", "released", "rejected", "needs_info"},
+        }
+        out: Dict[str, Any] = {}
+        for key in ("need", "why", "session"):
+            if not isinstance(payload.get(key), str):
+                raise ToolError(f"{key} must be a string", code=-32602)
+            out[key] = payload[key]
+        def _enum_field(name: str, default: str) -> None:
+            val = (payload.get(name) or default).lower()
+            if val not in enums[name]:
+                raise ToolError(f"{name} must be one of {', '.join(sorted(enums[name]))}", code=-32602)
+            out[name] = val
+        _enum_field("source", "manual")
+        _enum_field("type", "enhancement")
+        _enum_field("priority", "medium")
+        _enum_field("domain", "system")
+        _enum_field("status", "pending")
+        examples = payload.get("examples")
+        if examples is not None:
+            if not isinstance(examples, list) or any(not isinstance(e, str) for e in examples):
+                raise ToolError("examples must be an array of strings", code=-32602)
+            out["examples"] = examples
+        for optional_str in ("related_tool", "resolution_note", "owner"):
+            val = payload.get(optional_str)
+            if val is not None and not isinstance(val, str):
+                raise ToolError(f"{optional_str} must be a string", code=-32602)
+            if val is not None:
+                out[optional_str] = val
+        tags = payload.get("tags")
+        if tags is not None:
+            if not isinstance(tags, list) or any(not isinstance(t, str) for t in tags):
+                raise ToolError("tags must be an array of strings", code=-32602)
+            out["tags"] = tags
+        failing_call = payload.get("failing_call")
+        if failing_call is not None:
+            if not isinstance(failing_call, dict) or not isinstance(failing_call.get("name"), str):
+                raise ToolError("failing_call must be an object with name", code=-32602)
+            out["failing_call"] = failing_call
+        for obj_field in ("blender", "context", "repro", "error", "api_probe"):
+            val = payload.get(obj_field)
+            if val is not None and not isinstance(val, dict):
+                raise ToolError(f"{obj_field} must be an object", code=-32602)
+            if val is not None:
+                out[obj_field] = val
+        return out
+
+    def create(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        clean = self._validate_new(payload)
+        entry = {
+            "schema_version": 2,
+            "id": str(uuid.uuid4()),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            **clean,
+        }
+        self._write_jsonl(TOOL_REQUEST_FILE, entry)
+        self.requests[entry["id"]] = entry
+        return entry
+
+    def list(self, filters: Dict[str, Any], limit: int = 50, cursor: Optional[str] = None) -> Dict[str, Any]:
+        items = list(self.requests.values())
+        for key in ("status", "domain", "type", "priority", "session"):
+            val = filters.get(key)
+            if val:
+                items = [it for it in items if it.get(key) == val]
+        text = filters.get("text")
+        if text:
+            low = text.lower()
+            items = [it for it in items if low in (it.get("need", "") + it.get("why", "")).lower()]
+        items.sort(key=lambda i: i.get("created_at", ""))
+        start = 0
+        if cursor:
+            try:
+                start = int(cursor)
+            except Exception:
+                start = 0
+        sliced = items[start : start + limit]
+        next_cursor = None
+        if start + limit < len(items):
+            next_cursor = str(start + limit)
+        summaries = [
+            {
+                "id": it.get("id"),
+                "created_at": it.get("created_at"),
+                "need": it.get("need"),
+                "type": it.get("type"),
+                "priority": it.get("priority"),
+                "domain": it.get("domain"),
+                "status": it.get("status"),
+            }
+            for it in sliced
+        ]
+        return {"items": summaries, "cursor": next_cursor}
+
+    def get(self, req_id: str) -> Optional[Dict[str, Any]]:
+        return self.requests.get(req_id)
+
+    def update(self, req_id: str, changes: Dict[str, Any]) -> Dict[str, Any]:
+        if req_id not in self.requests:
+            raise ToolError("request not found", code=-32602)
+        allowed_status = {"pending", "triaged", "accepted", "implemented", "released", "rejected", "needs_info"}
+        allowed_priority = {"critical", "high", "medium", "low"}
+        clean: Dict[str, Any] = {}
+        if "status" in changes:
+            status = changes["status"]
+            if status not in allowed_status:
+                raise ToolError("invalid status", code=-32602)
+            clean["status"] = status
+        if "priority" in changes:
+            pr = changes["priority"]
+            if pr not in allowed_priority:
+                raise ToolError("invalid priority", code=-32602)
+            clean["priority"] = pr
+        if "tags" in changes:
+            tags = changes["tags"]
+            if tags is not None and (not isinstance(tags, list) or any(not isinstance(t, str) for t in tags)):
+                raise ToolError("tags must be array of strings", code=-32602)
+            clean["tags"] = tags
+        for field in ("owner", "resolution_note"):
+            if field in changes:
+                val = changes[field]
+                if val is not None and not isinstance(val, str):
+                    raise ToolError(f"{field} must be a string", code=-32602)
+                clean[field] = val
+        if not clean:
+            raise ToolError("no changes provided", code=-32602)
+        current = self.requests[req_id].copy()
+        current.update(clean)
+        self.requests[req_id] = current
+        record = {"id": req_id, "ts": datetime.now(timezone.utc).isoformat(), "changes": clean}
+        self._write_jsonl(TOOL_REQUEST_UPDATES_FILE, record)
+        return current
 
 
 def _bridge_request(path: str, payload: Optional[Dict[str, Any]] = None, timeout: float = 0.5) -> Any:
@@ -117,6 +320,7 @@ class ToolRegistry:
     def __init__(self) -> None:
         self._tools: Dict[str, Tool] = {}
         self._register_defaults()
+        self._tool_request_store = ToolRequestStore()
 
     def _register(
         self, name: str, description: str, input_schema: Dict[str, Any], handler: Callable[[Dict[str, Any]], Dict[str, Any]]
@@ -281,7 +485,30 @@ bpy.context.view_layer.objects.active = obj
         vertices = args.get("vertices", 16)
         radius = args.get("radius", 1.0)
         depth = args.get("depth", 2.0)
-        location = self._validate_vector(args.get("location"), name="location") or [0.0, 0.0, 0.0]
+        def _coerce_location(val: Any) -> List[float]:
+            if val is None:
+                return [0.0, 0.0, 0.0]
+            if isinstance(val, (list, tuple)) and len(val) == 3:
+                seq = val
+            elif isinstance(val, dict) and {"x", "y", "z"} <= set(val.keys()):
+                seq = [val.get("x"), val.get("y"), val.get("z")]
+            elif isinstance(val, str):
+                parts = [p.strip() for p in val.split(",") if p.strip()]
+                if len(parts) != 3:
+                    raise ToolError("location string must be 'x,y,z'", code=-32602)
+                seq = parts
+            else:
+                raise ToolError("location must be an array of 3 numbers", code=-32602)
+            out: List[float] = []
+            for item in seq:
+                try:
+                    out.append(float(item))
+                except Exception:
+                    raise ToolError("location must be an array of 3 numbers", code=-32602)
+            if len(out) != 3:
+                raise ToolError("location must be an array of 3 numbers", code=-32602)
+            return out
+        location = _coerce_location(args.get("location"))
         name = args.get("name")
         try:
             vertices_i = int(vertices)
@@ -377,7 +604,19 @@ else:
         segments = args.get("segments", 32)
         rings = args.get("rings", 16)
         subdivisions = args.get("subdivisions", 2)
-        radius = args.get("radius", 1.0)
+        radius_arg = args.get("radius")
+        diameter = args.get("diameter")
+        radius = radius_arg if radius_arg is not None else None
+        if radius is None and diameter is not None:
+            try:
+                diameter_f = float(diameter)
+            except Exception:
+                raise ToolError("diameter must be a number", code=-32602)
+            if diameter_f <= 0:
+                raise ToolError("diameter must be > 0", code=-32602)
+            radius = diameter_f / 2.0
+        if radius is None:
+            radius = 1.0
         location = self._validate_vector(args.get("location"), name="location") or [0.0, 0.0, 0.0]
         name = args.get("name") or "Sphere"
         if sphere_type not in ("uv", "ico"):
@@ -386,6 +625,8 @@ else:
             radius_f = float(radius)
         except Exception:
             raise ToolError("radius must be a number", code=-32602)
+        if radius_f <= 0:
+            raise ToolError("radius must be > 0", code=-32602)
         if sphere_type == "uv":
             try:
                 seg_i = int(segments)
@@ -393,17 +634,11 @@ else:
             except Exception:
                 raise ToolError("segments and rings must be integers", code=-32602)
             code = f"""
-import bpy, bmesh
-mesh = bpy.data.meshes.new("UVSphere")
-bm = bmesh.new()
-bmesh.ops.create_uvsphere(bm, u_segments={seg_i}, v_segments={ring_i}, diameter={radius_f*2})
-bm.to_mesh(mesh)
-bm.free()
-obj = bpy.data.objects.new({json.dumps(name)}, mesh)
-scene = bpy.context.scene
-scene.collection.objects.link(obj)
-obj.location = ({location[0]}, {location[1]}, {location[2]})
-bpy.context.view_layer.objects.active = obj
+import bpy
+bpy.ops.mesh.primitive_uv_sphere_add(radius={radius_f}, segments={seg_i}, ring_count={ring_i}, location=({location[0]}, {location[1]}, {location[2]}))
+obj = bpy.context.active_object
+if obj is not None:
+    obj.name = {json.dumps(name)}
 """
         else:
             try:
@@ -411,17 +646,11 @@ bpy.context.view_layer.objects.active = obj
             except Exception:
                 raise ToolError("subdivisions must be an integer", code=-32602)
             code = f"""
-import bpy, bmesh
-mesh = bpy.data.meshes.new("IcoSphere")
-bm = bmesh.new()
-bmesh.ops.create_icosphere(bm, subdivisions={sub_i}, radius={radius_f})
-bm.to_mesh(mesh)
-bm.free()
-obj = bpy.data.objects.new({json.dumps(name)}, mesh)
-scene = bpy.context.scene
-scene.collection.objects.link(obj)
-obj.location = ({location[0]}, {location[1]}, {location[2]})
-bpy.context.view_layer.objects.active = obj
+import bpy
+bpy.ops.mesh.primitive_ico_sphere_add(radius={radius_f}, subdivisions={sub_i}, location=({location[0]}, {location[1]}, {location[2]}))
+obj = bpy.context.active_object
+if obj is not None:
+    obj.name = {json.dumps(name)}
 """
         data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
         if not data.get("ok"):
@@ -821,27 +1050,53 @@ light_obj.rotation_euler = (math.radians({rotation[0]}), math.radians({rotation[
         return _make_tool_result("model session ended", is_error=False)
 
     def _tool_tool_request(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        session = args.get("session")
-        need = args.get("need")
-        why = args.get("why")
-        examples = args.get("examples")
-        if not isinstance(session, str):
-            return _make_tool_result("session must be a string", is_error=True)
-        if not isinstance(need, str):
-            return _make_tool_result("need must be a string", is_error=True)
-        if not isinstance(why, str):
-            return _make_tool_result("why must be a string", is_error=True)
-        if examples is not None and not isinstance(examples, list):
-            return _make_tool_result("examples must be a list", is_error=True)
-        entry = {
-            "id": str(uuid.uuid4()),
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "type": "tool-request",
-            "session": session,
-            "payload": {"need": need, "why": why, "examples": examples},
-        }
-        _append_request(entry)
-        return _make_tool_result("tool request recorded", is_error=False)
+        payload = dict(args)
+        # legacy upgrade path
+        if {"need", "why", "session"} <= payload.keys() and "type" not in payload:
+            payload.setdefault("type", "enhancement")
+            payload.setdefault("priority", "medium")
+            payload.setdefault("domain", "system")
+            payload.setdefault("source", "manual")
+            payload.setdefault("schema_version", 2)
+        try:
+            entry = self._tool_request_store.create(payload)
+        except ToolError as exc:
+            return _make_tool_result(str(exc), is_error=True)
+        _append_request({"type": "tool-request", "id": entry["id"], "payload": payload})
+        return _make_tool_result(json.dumps({"ok": True, "id": entry["id"], "status": entry.get("status"), "stored_path": str(TOOL_REQUEST_FILE)}), is_error=False)
+
+    def _tool_tool_request_list(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        filters = args.get("filters") or {}
+        if not isinstance(filters, dict):
+            return _make_tool_result("filters must be an object", is_error=True)
+        limit = args.get("limit", 50)
+        cursor = args.get("cursor")
+        try:
+            limit_i = int(limit)
+        except Exception:
+            return _make_tool_result("limit must be an integer", is_error=True)
+        res = self._tool_request_store.list(filters, limit=limit_i, cursor=cursor)
+        return _make_tool_result(json.dumps(res), is_error=False)
+
+    def _tool_tool_request_get(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        req_id = args.get("id")
+        if not isinstance(req_id, str):
+            return _make_tool_result("id must be a string", is_error=True)
+        item = self._tool_request_store.get(req_id)
+        if not item:
+            return _make_tool_result("not found", is_error=True)
+        return _make_tool_result(json.dumps(item), is_error=False)
+
+    def _tool_tool_request_update(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        req_id = args.get("id")
+        if not isinstance(req_id, str):
+            return _make_tool_result("id must be a string", is_error=True)
+        changes = {k: v for k, v in args.items() if k != "id"}
+        try:
+            updated = self._tool_request_store.update(req_id, changes)
+        except ToolError as exc:
+            return _make_tool_result(str(exc), is_error=True)
+        return _make_tool_result(json.dumps({"ok": True, "id": req_id, "status": updated.get("status")}), is_error=False)
 
     def _resolve_intent(self, text: str) -> Dict[str, Any]:
         if not isinstance(text, str):

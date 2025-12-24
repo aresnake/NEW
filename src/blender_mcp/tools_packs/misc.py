@@ -96,9 +96,61 @@ def register(registry, _: Any, __: Any, ___: Any) -> None:  # noqa: ANN001
                 "need": {"type": "string"},
                 "why": {"type": "string"},
                 "examples": {"type": "array"},
+                "type": {"type": "string"},
+                "priority": {"type": "string"},
+                "domain": {"type": "string"},
+                "source": {"type": "string"},
+                "related_tool": {"type": "string"},
+                "failing_call": {"type": "object"},
+                "blender": {"type": "object"},
+                "context": {"type": "object"},
+                "repro": {"type": "object"},
+                "error": {"type": "object"},
+                "api_probe": {"type": "object"},
+                "status": {"type": "string"},
+                "tags": {"type": "array"},
             },
             "required": ["session", "need", "why"],
             "additionalProperties": False,
         },
         registry._tool_tool_request,  # noqa: SLF001
+    )
+    reg(
+        "tool-request-list",
+        "List tool requests",
+        {
+            "type": "object",
+            "properties": {"filters": {"type": "object"}, "limit": {"type": "integer"}, "cursor": {"type": "string"}},
+            "additionalProperties": False,
+        },
+        registry._tool_tool_request_list,  # noqa: SLF001
+    )
+    reg(
+        "tool-request-get",
+        "Get a tool request by id",
+        {
+            "type": "object",
+            "properties": {"id": {"type": "string"}},
+            "required": ["id"],
+            "additionalProperties": False,
+        },
+        registry._tool_tool_request_get,  # noqa: SLF001
+    )
+    reg(
+        "tool-request-update",
+        "Update a tool request status/priority/tags",
+        {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"},
+                "status": {"type": "string"},
+                "priority": {"type": "string"},
+                "tags": {"type": "array"},
+                "owner": {"type": "string"},
+                "resolution_note": {"type": "string"},
+            },
+            "required": ["id"],
+            "additionalProperties": False,
+        },
+        registry._tool_tool_request_update,  # noqa: SLF001
     )
