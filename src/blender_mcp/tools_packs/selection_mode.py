@@ -126,7 +126,7 @@ for v in bm.verts:
     v.select_set(False)
 seed = bm.verts[0]
 seed.select_set(True)
-bmesh.update_edit_mesh(mesh, False, False)
+bmesh.update_edit_mesh(mesh)
 bpy.ops.mesh.select_linked()
 """
         code = _build_edit_code(op, selection_type="VERT")
@@ -162,7 +162,7 @@ target = bm.edges[0]
 target.select_set(True)
 bm.select_history.clear()
 bm.select_history.add(target)
-bmesh.update_edit_mesh(mesh, False, False)
+bmesh.update_edit_mesh(mesh)
 bpy.ops.mesh.loop_multi_select(ring=False)
 """
         code = _build_edit_code(op, selection_type="EDGE")
@@ -184,7 +184,7 @@ target = bm.edges[0]
 target.select_set(True)
 bm.select_history.clear()
 bm.select_history.add(target)
-bmesh.update_edit_mesh(mesh, False, False)
+bmesh.update_edit_mesh(mesh)
 bpy.ops.mesh.loop_multi_select(ring=True)
 """
         code = _build_edit_code(op, selection_type="EDGE")
