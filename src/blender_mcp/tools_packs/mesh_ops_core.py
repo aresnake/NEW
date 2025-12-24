@@ -48,7 +48,7 @@ finally:
         use_beauty = args.get("use_beauty", True)
         if not isinstance(use_beauty, bool):
             raise ToolError("use_beauty must be a boolean", code=-32602)
-        code = _build_edit_code(f"bpy.ops.mesh.fill(use_beauty={json.dumps(use_beauty)})")
+        code = _build_edit_code(f"bpy.ops.mesh.fill(use_beauty={use_beauty})")
         return _run(code, error_msg="Failed to fill selection")
 
     def _mesh_grid_fill(args: Dict[str, Any]) -> Dict[str, Any]:
@@ -77,7 +77,19 @@ finally:
         return _run(code, error_msg="Failed to split selection")
 
     def _mesh_separate_selected(_: Dict[str, Any]) -> Dict[str, Any]:
-        code = _build_edit_code("bpy.ops.mesh.separate(type='SELECTED')")
+        code = _build_edit_code(
+            """
+mesh = bpy.context.active_object.data
+bm = bmesh.from_edit_mesh(mesh)
+bm.verts.ensure_lookup_table()
+bm.edges.ensure_lookup_table()
+bm.faces.ensure_lookup_table()
+has_sel = any(v.select for v in bm.verts) or any(e.select for e in bm.edges) or any(f.select for f in bm.faces)
+if not has_sel:
+    raise RuntimeError("Nothing selected")
+bpy.ops.mesh.separate(type='SELECTED')
+"""
+        )
         return _run(code, error_msg="Failed to separate selection")
 
     def _mesh_make_edge_face(_: Dict[str, Any]) -> Dict[str, Any]:
@@ -110,7 +122,7 @@ finally:
             raise ToolError("uvs must be a boolean", code=-32602)
         call = (
             "bpy.ops.mesh.tris_convert_to_quads("
-            f"face_threshold={face_f}, shape_threshold={shape_f}, uvs={json.dumps(uvs)})"
+            f"face_threshold={face_f}, shape_threshold={shape_f}, uvs={uvs})"
         )
         code = _build_edit_code(call)
         return _run(code, error_msg="Failed to convert tris to quads")
