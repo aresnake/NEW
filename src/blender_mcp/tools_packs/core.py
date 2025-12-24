@@ -1,3 +1,4 @@
+import os
 from typing import Any
 
 
@@ -22,14 +23,15 @@ def register(registry, bridge_request: Any, make_tool_result: Any, ToolError: An
         {"type": "object", "properties": {}, "additionalProperties": False},
         registry._tool_blender_snapshot,  # noqa: SLF001
     )
-    reg(
-        "blender-exec",
-        "Execute Python code in Blender (code <= 20000 chars)",
-        {
-            "type": "object",
-            "properties": {"code": {"type": "string"}},
-            "required": ["code"],
-            "additionalProperties": False,
-        },
-        registry._tool_blender_exec,  # noqa: SLF001
-    )
+    if os.environ.get("BLENDER_MCP_UNSAFE") == "1":
+        reg(
+            "blender-exec",
+            "Execute Python code in Blender (code <= 20000 chars)",
+            {
+                "type": "object",
+                "properties": {"code": {"type": "string"}},
+                "required": ["code"],
+                "additionalProperties": False,
+            },
+            registry._tool_blender_exec,  # noqa: SLF001
+        )

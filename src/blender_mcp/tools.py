@@ -281,7 +281,30 @@ bpy.context.view_layer.objects.active = obj
         vertices = args.get("vertices", 16)
         radius = args.get("radius", 1.0)
         depth = args.get("depth", 2.0)
-        location = self._validate_vector(args.get("location"), name="location") or [0.0, 0.0, 0.0]
+        def _coerce_location(val: Any) -> List[float]:
+            if val is None:
+                return [0.0, 0.0, 0.0]
+            if isinstance(val, (list, tuple)) and len(val) == 3:
+                seq = val
+            elif isinstance(val, dict) and {"x", "y", "z"} <= set(val.keys()):
+                seq = [val.get("x"), val.get("y"), val.get("z")]
+            elif isinstance(val, str):
+                parts = [p.strip() for p in val.split(",") if p.strip()]
+                if len(parts) != 3:
+                    raise ToolError("location string must be 'x,y,z'", code=-32602)
+                seq = parts
+            else:
+                raise ToolError("location must be an array of 3 numbers", code=-32602)
+            out: List[float] = []
+            for item in seq:
+                try:
+                    out.append(float(item))
+                except Exception:
+                    raise ToolError("location must be an array of 3 numbers", code=-32602)
+            if len(out) != 3:
+                raise ToolError("location must be an array of 3 numbers", code=-32602)
+            return out
+        location = _coerce_location(args.get("location"))
         name = args.get("name")
         try:
             vertices_i = int(vertices)
@@ -377,7 +400,19 @@ else:
         segments = args.get("segments", 32)
         rings = args.get("rings", 16)
         subdivisions = args.get("subdivisions", 2)
-        radius = args.get("radius", 1.0)
+        radius_arg = args.get("radius")
+        diameter = args.get("diameter")
+        radius = radius_arg if radius_arg is not None else None
+        if radius is None and diameter is not None:
+            try:
+                diameter_f = float(diameter)
+            except Exception:
+                raise ToolError("diameter must be a number", code=-32602)
+            if diameter_f <= 0:
+                raise ToolError("diameter must be > 0", code=-32602)
+            radius = diameter_f / 2.0
+        if radius is None:
+            radius = 1.0
         location = self._validate_vector(args.get("location"), name="location") or [0.0, 0.0, 0.0]
         name = args.get("name") or "Sphere"
         if sphere_type not in ("uv", "ico"):
@@ -386,6 +421,8 @@ else:
             radius_f = float(radius)
         except Exception:
             raise ToolError("radius must be a number", code=-32602)
+        if radius_f <= 0:
+            raise ToolError("radius must be > 0", code=-32602)
         if sphere_type == "uv":
             try:
                 seg_i = int(segments)
@@ -393,17 +430,11 @@ else:
             except Exception:
                 raise ToolError("segments and rings must be integers", code=-32602)
             code = f"""
-import bpy, bmesh
-mesh = bpy.data.meshes.new("UVSphere")
-bm = bmesh.new()
-bmesh.ops.create_uvsphere(bm, u_segments={seg_i}, v_segments={ring_i}, diameter={radius_f*2})
-bm.to_mesh(mesh)
-bm.free()
-obj = bpy.data.objects.new({json.dumps(name)}, mesh)
-scene = bpy.context.scene
-scene.collection.objects.link(obj)
-obj.location = ({location[0]}, {location[1]}, {location[2]})
-bpy.context.view_layer.objects.active = obj
+import bpy
+bpy.ops.mesh.primitive_uv_sphere_add(radius={radius_f}, segments={seg_i}, ring_count={ring_i}, location=({location[0]}, {location[1]}, {location[2]}))
+obj = bpy.context.active_object
+if obj is not None:
+    obj.name = {json.dumps(name)}
 """
         else:
             try:
@@ -411,17 +442,11 @@ bpy.context.view_layer.objects.active = obj
             except Exception:
                 raise ToolError("subdivisions must be an integer", code=-32602)
             code = f"""
-import bpy, bmesh
-mesh = bpy.data.meshes.new("IcoSphere")
-bm = bmesh.new()
-bmesh.ops.create_icosphere(bm, subdivisions={sub_i}, radius={radius_f})
-bm.to_mesh(mesh)
-bm.free()
-obj = bpy.data.objects.new({json.dumps(name)}, mesh)
-scene = bpy.context.scene
-scene.collection.objects.link(obj)
-obj.location = ({location[0]}, {location[1]}, {location[2]})
-bpy.context.view_layer.objects.active = obj
+import bpy
+bpy.ops.mesh.primitive_ico_sphere_add(radius={radius_f}, subdivisions={sub_i}, location=({location[0]}, {location[1]}, {location[2]}))
+obj = bpy.context.active_object
+if obj is not None:
+    obj.name = {json.dumps(name)}
 """
         data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
         if not data.get("ok"):
