@@ -24,3 +24,5 @@ nul
 scripts/audit_tool.ps1
 
 AUDIT_BUNDLE.txt
+
+data/
