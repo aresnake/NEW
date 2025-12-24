@@ -76,9 +76,13 @@ finally:
         code = _build_edit_code("bpy.ops.mesh.split()")
         return _run(code, error_msg="Failed to split selection")
 
-    def _mesh_separate_selected(_: Dict[str, Any]) -> Dict[str, Any]:
+    def _mesh_separate_selected(args: Dict[str, Any]) -> Dict[str, Any]:
+        sep_type = (args.get("type") or "SELECTED").upper()
+        valid_types = {"SELECTED", "MATERIAL", "LOOSE", "BY_MATERIAL"}
+        if sep_type not in valid_types:
+            raise ToolError("type must be SELECTED, MATERIAL, LOOSE, or BY_MATERIAL", code=-32602)
         code = _build_edit_code(
-            """
+            f"""
 mesh = bpy.context.active_object.data
 bm = bmesh.from_edit_mesh(mesh)
 bm.verts.ensure_lookup_table()
@@ -87,7 +91,7 @@ bm.faces.ensure_lookup_table()
 has_sel = any(v.select for v in bm.verts) or any(e.select for e in bm.edges) or any(f.select for f in bm.faces)
 if not has_sel:
     raise RuntimeError("Nothing selected")
-bpy.ops.mesh.separate(type='SELECTED')
+bpy.ops.mesh.separate(type={json.dumps(sep_type)})
 """
         )
         return _run(code, error_msg="Failed to separate selection")

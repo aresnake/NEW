@@ -60,3 +60,34 @@ def test_triangulate_enum_validation(monkeypatch):
     registry = tools.ToolRegistry()
     bad = registry.call_tool("blender-mesh-triangulate-faces", {"quad_method": "BAD"}, log_action=False)
     assert bad["isError"] is True
+
+
+def test_tris_to_quads_uses_python_bool(monkeypatch):
+    payloads = []
+
+    def fake_bridge(path, payload=None, timeout=0.5):
+        payloads.append(payload)
+        return {"ok": True}
+
+    monkeypatch.setattr(tools, "_bridge_request", fake_bridge)
+    registry = tools.ToolRegistry()
+    result = registry.call_tool("blender-mesh-tris-to-quads", {"uvs": True}, log_action=False)
+    assert result["isError"] is False
+    code = payloads[0]["code"]
+    assert "false" not in code
+    assert "uvs=True" in code
+
+
+def test_separate_selected_type_and_empty(monkeypatch):
+    payloads = []
+
+    def fake_bridge(path, payload=None, timeout=0.5):
+        payloads.append(payload)
+        return {"ok": False, "error": "Nothing selected"}
+
+    monkeypatch.setattr(tools, "_bridge_request", fake_bridge)
+    registry = tools.ToolRegistry()
+    result = registry.call_tool("blender-mesh-separate-selected", {"type": "BY_MATERIAL"}, log_action=False)
+    assert result["isError"] is True
+    code = payloads[0]["code"]
+    assert "BY_MATERIAL" in code
