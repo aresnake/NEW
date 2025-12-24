@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 import uuid
 
+from .tools_packs import mesh_edit
+
 BRIDGE_URL = os.environ.get("BLENDER_MCP_BRIDGE_URL") or os.environ.get("NEW_MCP_BRIDGE_URL", "http://127.0.0.1:8765")
 SERVER_VERSION = "0.1.0"
 NAME_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
@@ -825,6 +827,7 @@ class ToolRegistry:
             },
             self._tool_align_to_axis,
         )
+        mesh_edit.register(self, _bridge_request, _make_tool_result, ToolError)
 
     def list_tools(self) -> List[Dict[str, Any]]:
         return [
