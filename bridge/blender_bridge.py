@@ -61,13 +61,12 @@ def _run_job(job: dict) -> None:
     code = job.get("code", "")
     try:
         compiled = compile(code, "<mcp_exec>", "exec")
-        exec_globals = {"bpy": bpy}
-        exec_locals: dict = {}
-        exec(compiled, exec_globals, exec_locals)
+        exec_ns = {"__builtins__": __builtins__, "bpy": bpy}
+        exec(compiled, exec_ns, exec_ns)
         job["ok"] = True
         job["error"] = None
         job["traceback"] = None
-        job["result"] = exec_locals.get("result")
+        job["result"] = exec_ns.get("result")
     except Exception as exc:  # noqa: BLE001
         job["ok"] = False
         job["error"] = str(exc)
