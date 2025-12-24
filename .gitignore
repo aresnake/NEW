@@ -19,5 +19,6 @@ runs/
 nul
 
 
-# local helpersscripts/audit_tool.ps1
 
+# local helpers
+scripts/audit_tool.ps1
