@@ -53,7 +53,7 @@ def test_get_object_info_imports_math(monkeypatch):
     registry = tools.ToolRegistry()
     registry.call_tool("blender-get-object-info", {"name": "Cube"}, log_action=False)
     code = payloads[0]["code"]
-    assert "math" in code.splitlines()[1]
+    assert "import math" in code
 
 
 def test_blender_exec_gated(monkeypatch):

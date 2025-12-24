@@ -600,7 +600,8 @@ for obj in bpy.data.objects:
         if not isinstance(name, str):
             raise ToolError("name must be a string", code=-32602)
         code = f"""
-import bpy, math
+import bpy
+import math
 name = {json.dumps(name)}
 obj = bpy.data.objects.get(name)
 if obj is None:
