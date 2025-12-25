@@ -97,8 +97,6 @@ def register(registry, bridge_request, make_tool_result, ToolError) -> None:  # 
             dist_f = float(distance)
         except Exception:
             raise ToolError("distance must be a number", code=-32602)
-        if dist_f <= 0:
-            raise ToolError("distance must be > 0", code=-32602)
         axis_vals = {"X", "Y", "Z", "NORMAL"}
         if axis not in axis_vals:
             raise ToolError("axis must be one of X,Y,Z,NORMAL", code=-32602)
@@ -192,17 +190,18 @@ if obj is None:
     raise RuntimeError(f"Object not found: {{name}}")
 if obj.type != 'MESH':
     raise RuntimeError("Object is not a mesh")
-mesh = obj.data
-bm = bmesh.new()
-bm.from_mesh(mesh)
-faces = bm.faces[:]
-if not faces:
-    raise RuntimeError("Mesh has no faces")
-bmesh.ops.inset_region(bm, faces=faces, thickness=thickness, depth=depth, use_even_offset=True)
-bm.to_mesh(mesh)
-bm.free()
-mesh.update()
+initial_mode = obj.mode
+restore_mode = initial_mode if initial_mode in {{'EDIT', 'OBJECT', 'SCULPT', 'VERTEX_PAINT', 'WEIGHT_PAINT', 'TEXTURE_PAINT'}} else 'OBJECT'
+bpy.ops.object.mode_set(mode='OBJECT')
+bpy.ops.object.select_all(action='DESELECT')
+obj.select_set(True)
 bpy.context.view_layer.objects.active = obj
+try:
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.mesh.inset(thickness=thickness, depth=depth)
+finally:
+    bpy.ops.object.mode_set(mode=restore_mode)
 """
         data = bridge_request("/exec", payload={"code": code}, timeout=5.0)
         if not data.get("ok"):
@@ -695,6 +694,7 @@ bpy.context.view_layer.objects.active = obj
             raise ToolError("steps must be an integer", code=-32602)
         if steps_i < 1:
             raise ToolError("steps must be >= 1", code=-32602)
+        center = registry._validate_vector(args.get("center"), name="center") or [0.0, 0.0, 0.0]  # noqa: SLF001
         axis_vec = {"X": (1.0, 0.0, 0.0), "Y": (0.0, 1.0, 0.0), "Z": (0.0, 0.0, 1.0)}[axis]
         code = f"""
 import bpy, bmesh, math
@@ -702,6 +702,7 @@ name = {json.dumps(name)}
 axis_vec = {json.dumps(axis_vec)}
 angle = math.radians({angle_f})
 steps = {steps_i}
+cent = ({center[0]}, {center[1]}, {center[2]})
 obj = bpy.data.objects.get(name)
 if obj is None:
     raise RuntimeError(f"Object not found: {{name}}")
@@ -714,7 +715,7 @@ geom = bm.verts[:] + bm.edges[:] + bm.faces[:]
 bmesh.ops.spin(
     bm,
     geom=geom,
-    cent=(0.0, 0.0, 0.0),
+    cent=cent,
     axis=axis_vec,
     angle=angle,
     steps=steps,
@@ -1011,6 +1012,7 @@ bpy.context.active_object.name = name
                 "axis": {"type": "string"},
                 "angle_degrees": {"type": "number"},
                 "steps": {"type": "integer"},
+                "center": {"type": "array"},
             },
             "required": ["name", "axis"],
             "additionalProperties": False,

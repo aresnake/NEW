@@ -736,17 +736,11 @@ bpy.context.view_layer.objects.active = obj
         except Exception:
             raise ToolError("major_segments and minor_segments must be integers", code=-32602)
         code = f"""
-import bpy, bmesh
-mesh = bpy.data.meshes.new("Torus")
-bm = bmesh.new()
-bmesh.ops.create_torus(bm, segments_major={maj_seg}, segments_minor={min_seg}, major_radius={maj_r}, minor_radius={min_r})
-bm.to_mesh(mesh)
-bm.free()
-obj = bpy.data.objects.new({json.dumps(name)}, mesh)
-scene = bpy.context.scene
-scene.collection.objects.link(obj)
-obj.location = ({location[0]}, {location[1]}, {location[2]})
-bpy.context.view_layer.objects.active = obj
+import bpy
+bpy.ops.mesh.primitive_torus_add(major_radius={maj_r}, minor_radius={min_r}, major_segments={maj_seg}, minor_segments={min_seg}, location=({location[0]}, {location[1]}, {location[2]}))
+obj = bpy.context.active_object
+if obj is not None:
+    obj.name = {json.dumps(name)}
 """
         data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
         if not data.get("ok"):
