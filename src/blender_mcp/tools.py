@@ -604,6 +604,38 @@ class ToolRegistry:
     def _register_defaults(self) -> None:
         register_all(self, _bridge_request, _make_tool_result, ToolError)
 
+
+        # Tool Requests (admin/debug)
+        self._register(
+            "tool-requests-info",
+            "Show tool-request store info (paths, env, counts).",
+            {"type": "object", "properties": {}, "additionalProperties": False},
+            self._tool_tool_requests_info,
+        )
+        self._register(
+            "tool-requests-tail",
+            "Tail tool-request JSONL files (base/updates/both) with parse status.",
+            {
+                "type": "object",
+                "properties": {
+                    "n": {"type": "integer", "minimum": 1, "maximum": 500, "default": 20},
+                    "which": {"type": "string", "enum": ["base", "updates", "both"], "default": "both"},
+                },
+                "additionalProperties": False,
+            },
+            self._tool_tool_requests_tail,
+        )
+        self._register(
+            "tool-requests-clear",
+            "Delete tool-request JSONL files in the current store (requires confirm=true).",
+            {
+                "type": "object",
+                "properties": {"confirm": {"type": "boolean", "default": False}},
+                "additionalProperties": False,
+            },
+            self._tool_tool_requests_clear,
+        )
+
     def list_tools(self) -> List[Dict[str, Any]]:
         return [
             {"name": tool.name, "description": tool.description, "inputSchema": tool.input_schema}
