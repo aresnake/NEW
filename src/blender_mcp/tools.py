@@ -234,12 +234,18 @@ class ToolRequestStore:
             if not isinstance(failing_call, dict) or not isinstance(failing_call.get("name"), str):
                 raise ToolError("failing_call must be an object with name", code=-32602)
             out["failing_call"] = failing_call
-        for obj_field in ("blender", "context", "repro", "error", "api_probe", "proposed_params_schema", "return_schema"):
+        for obj_field in ("blender", "context", "api_probe", "proposed_params_schema", "return_schema"):
             val = payload.get(obj_field)
             if val is not None and not isinstance(val, dict):
                 raise ToolError(f"{obj_field} must be an object", code=-32602)
             if val is not None:
                 out[obj_field] = val
+        for obj_or_text in ("repro", "error"):
+            val = payload.get(obj_or_text)
+            if val is not None and not isinstance(val, (dict, str)):
+                raise ToolError(f"{obj_or_text} must be an object or string", code=-32602)
+            if val is not None:
+                out[obj_or_text] = val
         effort = payload.get("estimated_effort")
         if effort is not None:
             if not isinstance(effort, str) or effort.lower() not in self._ESTIMATED_EFFORT:
@@ -300,12 +306,18 @@ class ToolRequestStore:
                 clean[list_field] = val
         if "examples" in changes:
             clean["examples"] = self._validate_examples(changes.get("examples"))
-        for obj_field in ("blender", "context", "repro", "error", "api_probe", "proposed_params_schema", "return_schema"):
+        for obj_field in ("blender", "context", "api_probe", "proposed_params_schema", "return_schema"):
             if obj_field in changes:
                 val = changes[obj_field]
                 if val is not None and not isinstance(val, dict):
                     raise ToolError(f"{obj_field} must be an object", code=-32602)
                 clean[obj_field] = val
+        for obj_or_text in ("repro", "error"):
+            if obj_or_text in changes:
+                val = changes[obj_or_text]
+                if val is not None and not isinstance(val, (dict, str)):
+                    raise ToolError(f"{obj_or_text} must be an object or string", code=-32602)
+                clean[obj_or_text] = val
         if "failing_call" in changes:
             val = changes["failing_call"]
             if val is not None and (not isinstance(val, dict) or not isinstance(val.get("name"), str)):
@@ -358,13 +370,15 @@ class ToolRequestStore:
             if isinstance(val, str) and val:
                 items = [it for it in items if str(it.get(key) or "").lower() == val.lower()]
         if filters.get("has_api_probe") is True:
-            items = [it for it in items if isinstance(it.get("api_probe"), dict)]
+            items = [it for it in items if isinstance(it.get("api_probe"), dict) and bool(it.get("api_probe"))]
         elif filters.get("has_api_probe") is False:
-            items = [it for it in items if not isinstance(it.get("api_probe"), dict)]
+            items = [it for it in items if not (isinstance(it.get("api_probe"), dict) and bool(it.get("api_probe")))]
         if filters.get("has_params_schema") is True:
-            items = [it for it in items if isinstance(it.get("proposed_params_schema"), dict)]
+            items = [it for it in items if isinstance(it.get("proposed_params_schema"), dict) and bool(it.get("proposed_params_schema"))]
         elif filters.get("has_params_schema") is False:
-            items = [it for it in items if not isinstance(it.get("proposed_params_schema"), dict)]
+            items = [
+                it for it in items if not (isinstance(it.get("proposed_params_schema"), dict) and bool(it.get("proposed_params_schema")))
+            ]
         text = filters.get("q") or filters.get("text")
         if text:
             low = text.lower()
@@ -373,10 +387,18 @@ class ToolRequestStore:
                 for it in items
                 if low
                 in (
-                    (it.get("need", "") or "") + (it.get("why", "") or "") + " ".join(it.get("tags") or [])
+                    " ".join(
+                        [
+                            it.get("need") or "",
+                            it.get("why") or "",
+                            " ".join(it.get("tags") or []),
+                            it.get("proposed_tool_name") or "",
+                            it.get("implementation_hint") or "",
+                        ]
+                    )
                 ).lower()
             ]
-        items.sort(key=lambda i: (i.get("created_at", ""), i.get("id", "")))
+        items.sort(key=lambda i: (i.get("created_at", ""), i.get("id", "")), reverse=True)
         start = 0
         token = next_page_token or cursor
         if token:
@@ -472,7 +494,11 @@ class ToolRequestStore:
             raise ToolError("patch must be an object", code=-32602)
         updated = []
         for rid in req_ids:
-            updated.append(self.update(rid, changes, mode=mode, list_mode=list_mode))
+            try:
+                item = self.update(rid, changes, mode=mode, list_mode=list_mode)
+                updated.append({"id": rid, "ok": True, "item": item})
+            except ToolError as exc:
+                updated.append({"id": rid, "ok": False, "error": str(exc)})
         return updated
 
     def bulk_delete(self, req_ids: List[str]) -> List[str]:
@@ -480,8 +506,11 @@ class ToolRequestStore:
             raise ToolError("ids must be an array of strings", code=-32602)
         deleted: List[str] = []
         for rid in req_ids:
-            self.delete(rid)
-            deleted.append(rid)
+            try:
+                self.delete(rid)
+                deleted.append({"id": rid, "ok": True})
+            except ToolError as exc:
+                deleted.append({"id": rid, "ok": False, "error": str(exc)})
         return deleted
 
 
@@ -1486,7 +1515,7 @@ light_obj.rotation_euler = (math.radians({rotation[0]}), math.radians({rotation[
             updated = self._tool_request_store.bulk_update(ids, patch, mode=mode, list_mode=list_mode)
         except ToolError as exc:
             return _make_tool_result(str(exc), is_error=True)
-        return _make_tool_result(json.dumps({"ok": True, "updated_ids": [u.get("id") for u in updated]}), is_error=False)
+        return _make_tool_result(json.dumps({"ok": True, "results": updated}), is_error=False)
 
     def _tool_tool_request_bulk_delete(self, args: Dict[str, Any]) -> Dict[str, Any]:
         ids = args.get("ids")
@@ -1496,7 +1525,7 @@ light_obj.rotation_euler = (math.radians({rotation[0]}), math.radians({rotation[
             deleted = self._tool_request_store.bulk_delete(ids)
         except ToolError as exc:
             return _make_tool_result(str(exc), is_error=True)
-        return _make_tool_result(json.dumps({"ok": True, "deleted_ids": deleted}), is_error=False)
+        return _make_tool_result(json.dumps({"ok": True, "results": deleted}), is_error=False)
 
     def _tool_tool_request_purge(self, args: Dict[str, Any]) -> Dict[str, Any]:
         statuses = args.get("status") or []

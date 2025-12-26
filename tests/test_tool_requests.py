@@ -163,3 +163,46 @@ def test_bulk_update(monkeypatch, tmp_path):
         got = registry.call_tool("tool-request-get", {"id": rid}, log_action=False)
         payload = json.loads(got["content"][0]["text"])
         assert payload["status"] == "triaged"
+
+
+def test_bulk_delete_with_missing(monkeypatch, tmp_path):
+    _setup_env(monkeypatch, tmp_path)
+    registry = tools.ToolRegistry()
+    res = registry.call_tool("tool-request", {"session": "s1", "need": "need1", "why": "w1"}, log_action=False)
+    real_id = json.loads(res["content"][0]["text"])["id"]
+    result = registry.call_tool("tool-request-bulk-delete", {"ids": [real_id, "missing"]}, log_action=False)
+    payload = json.loads(result["content"][0]["text"])
+    ok_entries = [r for r in payload["results"] if r["ok"]]
+    bad_entries = [r for r in payload["results"] if not r["ok"]]
+    assert ok_entries and ok_entries[0]["id"] == real_id
+    assert bad_entries and bad_entries[0]["id"] == "missing"
+    list_res = registry.call_tool("tool-request-list", {"filters": {}}, log_action=False)
+    payload_list = json.loads(list_res["content"][0]["text"])
+    assert payload_list["items"] == []
+
+
+def test_list_q_search(monkeypatch, tmp_path):
+    _setup_env(monkeypatch, tmp_path)
+    registry = tools.ToolRegistry()
+    registry.call_tool(
+        "tool-request",
+        {"session": "s1", "need": "first", "why": "alpha", "proposed_tool_name": "mesh_split"},
+        log_action=False,
+    )
+    res2 = registry.call_tool(
+        "tool-request",
+        {"session": "s2", "need": "second", "why": "beta", "implementation_hint": "use split mesh"},
+        log_action=False,
+    )
+    hit_id = json.loads(res2["content"][0]["text"])["id"]
+    search = registry.call_tool("tool-request-list", {"filters": {"q": "split mesh"}}, log_action=False)
+    payload = json.loads(search["content"][0]["text"])
+    assert [it["id"] for it in payload["items"]] == [hit_id]
+
+
+def test_corrupted_jsonl_lines_skipped(monkeypatch, tmp_path):
+    # precreate files with a bad line
+    tmp_path.joinpath("tool_requests.jsonl").write_text('{"id": "good", "need": "x", "why": "y", "session": "s"}\n{bad line}', encoding="utf-8")
+    _setup_env(monkeypatch, tmp_path)
+    registry = tools.ToolRegistry()
+    assert "good" in registry._tool_request_store.requests
