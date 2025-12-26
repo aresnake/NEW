@@ -1,4 +1,4 @@
-from . import core, materials_scene, mesh_cleanup, mesh_edit, mesh_ops_core, misc, modifiers, primitives_curves, selection_core, selection_mode, transforms, uv
+from . import core, materials_scene, mesh_cleanup, mesh_edit, mesh_ops_core, misc, modifiers, primitives_curves, scene_snapshot, selection_core, selection_mode, transforms, uv
 
 
 def register_all(registry, bridge_request, make_tool_result, ToolError) -> None:  # noqa: ANN001, N803
@@ -13,5 +13,6 @@ def register_all(registry, bridge_request, make_tool_result, ToolError) -> None:
     mesh_cleanup.register(registry, bridge_request, make_tool_result, ToolError)
     uv.register(registry, bridge_request, make_tool_result, ToolError)
     materials_scene.register(registry, bridge_request, make_tool_result, ToolError)
+    scene_snapshot.register(registry, bridge_request, make_tool_result, ToolError)
     misc.register(registry, bridge_request, make_tool_result, ToolError)
     mesh_edit.register(registry, bridge_request, make_tool_result, ToolError)
