@@ -52,9 +52,79 @@ class Tool:
 
 
 class ToolRequestStore:
+    _ENUMS = {
+        "source": {"claude", "codex", "manual"},
+        "type": {"bug_fix", "new_tool", "enhancement", "deprecation"},
+        "priority": {"critical", "high", "medium", "low"},
+        "domain": {
+            "mesh",
+            "object",
+            "selection",
+            "material",
+            "modifier",
+            "scene",
+            "render",
+            "nodes",
+            "uv",
+            "anim",
+            "io",
+            "system",
+        },
+        "status": {"pending", "triaged", "accepted", "implemented", "released", "rejected", "needs_info"},
+    }
+    _ESTIMATED_EFFORT = {"trivial", "small", "medium", "large"}
+
     def __init__(self) -> None:
         self.requests: Dict[str, Dict[str, Any]] = {}
         self._load()
+
+    def _normalize_entry(self, entry: Dict[str, Any]) -> Dict[str, Any]:
+        normalized = dict(entry)
+        created_at = normalized.get("created_at")
+        try:
+            normalized["revision"] = int(normalized.get("revision", 1))
+        except Exception:
+            normalized["revision"] = 1
+        normalized.setdefault("updated_at", created_at)
+        for list_field in ("depends_on", "blocks"):
+            val = normalized.get(list_field)
+            if not isinstance(val, list):
+                normalized[list_field] = []
+        return normalized
+
+    def _merge_value(self, current: Any, new_value: Any, *, mode: str, list_mode: str) -> Any:
+        if mode == "replace" or new_value is None:
+            return new_value
+        if isinstance(current, dict) and isinstance(new_value, dict):
+            merged = dict(current)
+            for key, val in new_value.items():
+                merged[key] = self._merge_value(current.get(key), val, mode=mode, list_mode=list_mode)
+            return merged
+        if isinstance(current, list) and isinstance(new_value, list):
+            if list_mode == "replace":
+                return new_value
+            merged_list = list(current)
+            for item in new_value:
+                if item not in merged_list:
+                    merged_list.append(item)
+            return merged_list
+        return new_value
+
+    def _merge_payload(self, base: Dict[str, Any], changes: Dict[str, Any], *, mode: str, list_mode: str) -> Dict[str, Any]:
+        merged = dict(base)
+        for key, value in changes.items():
+            merged[key] = self._merge_value(base.get(key), value, mode=mode, list_mode=list_mode)
+        return merged
+
+    def _validate_examples(self, examples: Any) -> Optional[List[Any]]:
+        if examples is None:
+            return None
+        if not isinstance(examples, list):
+            raise ToolError("examples must be an array", code=-32602)
+        for ex in examples:
+            if not isinstance(ex, (str, dict)):
+                raise ToolError("examples must contain strings or objects", code=-32602)
+        return examples
 
     def _load_jsonl(self, path: Path) -> List[Dict[str, Any]]:
         items: List[Dict[str, Any]] = []
@@ -78,7 +148,7 @@ class ToolRequestStore:
         updates = self._load_jsonl(TOOL_REQUEST_UPDATES_FILE)
         for item in base_items:
             if isinstance(item, dict) and "id" in item:
-                self.requests[item["id"]] = item
+                self.requests[item["id"]] = self._normalize_entry(item)
         for upd in updates:
             self._apply_update_record(upd)
 
@@ -87,11 +157,20 @@ class ToolRequestStore:
             return
         req_id = record.get("id")
         changes = record.get("changes") or {}
+        if record.get("delete") is True and isinstance(req_id, str):
+            self.requests.pop(req_id, None)
+            return
         if not isinstance(req_id, str) or req_id not in self.requests or not isinstance(changes, dict):
             return
+        mode = record.get("mode") or "replace"
+        list_mode = record.get("list_mode") or ("replace" if mode == "replace" else "append")
         current = self.requests[req_id].copy()
-        current.update(changes)
-        self.requests[req_id] = current
+        merged = self._merge_payload(current, changes, mode=mode, list_mode=list_mode)
+        merged["updated_at"] = record.get("ts") or datetime.now(timezone.utc).isoformat()
+        merged["revision"] = int(current.get("revision") or 1) + 1
+        if record.get("updated_by") is not None:
+            merged["updated_by"] = record.get("updated_by")
+        self.requests[req_id] = self._normalize_entry(merged)
 
     def _write_jsonl(self, path: Path, entry: Dict[str, Any]) -> None:
         TOOL_REQUEST_DIR.mkdir(parents=True, exist_ok=True)
@@ -99,47 +178,40 @@ class ToolRequestStore:
             fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
     def _validate_new(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        enums = {
-            "source": {"claude", "codex", "manual"},
-            "type": {"bug_fix", "new_tool", "enhancement", "deprecation"},
-            "priority": {"critical", "high", "medium", "low"},
-            "domain": {
-                "mesh",
-                "object",
-                "selection",
-                "material",
-                "modifier",
-                "scene",
-                "render",
-                "nodes",
-                "uv",
-                "anim",
-                "io",
-                "system",
-            },
-            "status": {"pending", "triaged", "accepted", "implemented", "released", "rejected", "needs_info"},
-        }
         out: Dict[str, Any] = {}
         for key in ("need", "why", "session"):
             if not isinstance(payload.get(key), str):
                 raise ToolError(f"{key} must be a string", code=-32602)
             out[key] = payload[key]
-        def _enum_field(name: str, default: str) -> None:
-            val = (payload.get(name) or default).lower()
-            if val not in enums[name]:
-                raise ToolError(f"{name} must be one of {', '.join(sorted(enums[name]))}", code=-32602)
+        def _enum_field(name: str, default: str, soft: bool = False) -> None:
+            raw_val = payload.get(name, default)
+            if raw_val is None:
+                return
+            if not isinstance(raw_val, str):
+                raise ToolError(f"{name} must be a string", code=-32602)
+            val = raw_val.lower()
+            allowed = self._ENUMS[name]
+            if not soft and val not in allowed:
+                raise ToolError(f"{name} must be one of {', '.join(sorted(allowed))}", code=-32602)
             out[name] = val
+
         _enum_field("source", "manual")
         _enum_field("type", "enhancement")
         _enum_field("priority", "medium")
-        _enum_field("domain", "system")
+        _enum_field("domain", "system", soft=True)
         _enum_field("status", "pending")
-        examples = payload.get("examples")
+        examples = self._validate_examples(payload.get("examples"))
         if examples is not None:
-            if not isinstance(examples, list) or any(not isinstance(e, str) for e in examples):
-                raise ToolError("examples must be an array of strings", code=-32602)
             out["examples"] = examples
-        for optional_str in ("related_tool", "resolution_note", "owner"):
+        for optional_str in (
+            "related_tool",
+            "resolution_note",
+            "owner",
+            "proposed_tool_name",
+            "assigned_to",
+            "implementation_hint",
+            "updated_by",
+        ):
             val = payload.get(optional_str)
             if val is not None and not isinstance(val, str):
                 raise ToolError(f"{optional_str} must be a string", code=-32602)
@@ -150,46 +222,166 @@ class ToolRequestStore:
             if not isinstance(tags, list) or any(not isinstance(t, str) for t in tags):
                 raise ToolError("tags must be an array of strings", code=-32602)
             out["tags"] = tags
+        for list_field in ("depends_on", "blocks", "acceptance_criteria"):
+            val = payload.get(list_field)
+            if val is None:
+                continue
+            if not isinstance(val, list) or any(not isinstance(v, str) for v in val):
+                raise ToolError(f"{list_field} must be an array of strings", code=-32602)
+            out[list_field] = val
         failing_call = payload.get("failing_call")
         if failing_call is not None:
             if not isinstance(failing_call, dict) or not isinstance(failing_call.get("name"), str):
                 raise ToolError("failing_call must be an object with name", code=-32602)
             out["failing_call"] = failing_call
-        for obj_field in ("blender", "context", "repro", "error", "api_probe"):
+        for obj_field in ("blender", "context", "repro", "error", "api_probe", "proposed_params_schema", "return_schema"):
             val = payload.get(obj_field)
             if val is not None and not isinstance(val, dict):
                 raise ToolError(f"{obj_field} must be an object", code=-32602)
             if val is not None:
                 out[obj_field] = val
+        effort = payload.get("estimated_effort")
+        if effort is not None:
+            if not isinstance(effort, str) or effort.lower() not in self._ESTIMATED_EFFORT:
+                raise ToolError("estimated_effort must be one of trivial, small, medium, large", code=-32602)
+            out["estimated_effort"] = effort.lower()
         return out
+
+    def _validate_update(self, changes: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(changes, dict):
+            raise ToolError("changes must be an object", code=-32602)
+        clean: Dict[str, Any] = {}
+
+        def _enum_field(name: str, allowed: set[str], soft: bool = False) -> None:
+            if name not in changes:
+                return
+            val = changes[name]
+            if val is None:
+                clean[name] = None
+                return
+            if not isinstance(val, str):
+                raise ToolError(f"{name} must be a string", code=-32602)
+            val_norm = val.lower()
+            if not soft and val_norm not in allowed:
+                raise ToolError(f"{name} must be one of {', '.join(sorted(allowed))}", code=-32602)
+            clean[name] = val_norm
+
+        _enum_field("status", self._ENUMS["status"])
+        _enum_field("priority", self._ENUMS["priority"])
+        _enum_field("type", self._ENUMS["type"])
+        _enum_field("source", self._ENUMS["source"])
+        _enum_field("domain", self._ENUMS["domain"], soft=True)
+        for text_field in (
+            "need",
+            "why",
+            "owner",
+            "resolution_note",
+            "proposed_tool_name",
+            "related_tool",
+            "assigned_to",
+            "implementation_hint",
+            "updated_by",
+        ):
+            if text_field in changes:
+                val = changes[text_field]
+                if val is not None and not isinstance(val, str):
+                    raise ToolError(f"{text_field} must be a string", code=-32602)
+                clean[text_field] = val
+        if "tags" in changes:
+            tags = changes["tags"]
+            if tags is not None and (not isinstance(tags, list) or any(not isinstance(t, str) for t in tags)):
+                raise ToolError("tags must be array of strings", code=-32602)
+            clean["tags"] = tags
+        for list_field in ("depends_on", "blocks", "acceptance_criteria"):
+            if list_field in changes:
+                val = changes[list_field]
+                if val is not None and (not isinstance(val, list) or any(not isinstance(v, str) for v in val)):
+                    raise ToolError(f"{list_field} must be an array of strings", code=-32602)
+                clean[list_field] = val
+        if "examples" in changes:
+            clean["examples"] = self._validate_examples(changes.get("examples"))
+        for obj_field in ("blender", "context", "repro", "error", "api_probe", "proposed_params_schema", "return_schema"):
+            if obj_field in changes:
+                val = changes[obj_field]
+                if val is not None and not isinstance(val, dict):
+                    raise ToolError(f"{obj_field} must be an object", code=-32602)
+                clean[obj_field] = val
+        if "failing_call" in changes:
+            val = changes["failing_call"]
+            if val is not None and (not isinstance(val, dict) or not isinstance(val.get("name"), str)):
+                raise ToolError("failing_call must be an object with name", code=-32602)
+            clean["failing_call"] = val
+        if "estimated_effort" in changes:
+            val = changes["estimated_effort"]
+            if val is not None:
+                if not isinstance(val, str) or val.lower() not in self._ESTIMATED_EFFORT:
+                    raise ToolError("estimated_effort must be one of trivial, small, medium, large", code=-32602)
+                clean["estimated_effort"] = val.lower()
+            else:
+                clean["estimated_effort"] = None
+        return clean
 
     def create(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         clean = self._validate_new(payload)
+        now = datetime.now(timezone.utc).isoformat()
         entry = {
             "schema_version": 2,
             "id": str(uuid.uuid4()),
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": now,
+            "updated_at": now,
+            "revision": 1,
             **clean,
         }
+        entry.setdefault("depends_on", [])
+        entry.setdefault("blocks", [])
         self._write_jsonl(TOOL_REQUEST_FILE, entry)
-        self.requests[entry["id"]] = entry
+        self.requests[entry["id"]] = self._normalize_entry(entry)
         return entry
 
-    def list(self, filters: Dict[str, Any], limit: int = 50, cursor: Optional[str] = None) -> Dict[str, Any]:
+    def list(
+        self, filters: Dict[str, Any], limit: int = 50, cursor: Optional[str] = None, next_page_token: Optional[str] = None
+    ) -> Dict[str, Any]:
         items = list(self.requests.values())
-        for key in ("status", "domain", "type", "priority", "session"):
+        filters = filters or {}
+        status_filter = filters.get("status")
+        if isinstance(status_filter, list):
+            items = [it for it in items if it.get("status") in status_filter]
+        elif isinstance(status_filter, str):
+            items = [it for it in items if it.get("status") == status_filter]
+        priority_filter = filters.get("priority")
+        if isinstance(priority_filter, list):
+            items = [it for it in items if it.get("priority") in priority_filter]
+        elif isinstance(priority_filter, str):
+            items = [it for it in items if it.get("priority") == priority_filter]
+        for key in ("domain", "type", "session"):
             val = filters.get(key)
-            if val:
-                items = [it for it in items if it.get(key) == val]
-        text = filters.get("text")
+            if isinstance(val, str) and val:
+                items = [it for it in items if str(it.get(key) or "").lower() == val.lower()]
+        if filters.get("has_api_probe") is True:
+            items = [it for it in items if isinstance(it.get("api_probe"), dict)]
+        elif filters.get("has_api_probe") is False:
+            items = [it for it in items if not isinstance(it.get("api_probe"), dict)]
+        if filters.get("has_params_schema") is True:
+            items = [it for it in items if isinstance(it.get("proposed_params_schema"), dict)]
+        elif filters.get("has_params_schema") is False:
+            items = [it for it in items if not isinstance(it.get("proposed_params_schema"), dict)]
+        text = filters.get("q") or filters.get("text")
         if text:
             low = text.lower()
-            items = [it for it in items if low in (it.get("need", "") + it.get("why", "")).lower()]
-        items.sort(key=lambda i: i.get("created_at", ""))
+            items = [
+                it
+                for it in items
+                if low
+                in (
+                    (it.get("need", "") or "") + (it.get("why", "") or "") + " ".join(it.get("tags") or [])
+                ).lower()
+            ]
+        items.sort(key=lambda i: (i.get("created_at", ""), i.get("id", "")))
         start = 0
-        if cursor:
+        token = next_page_token or cursor
+        if token:
             try:
-                start = int(cursor)
+                start = int(token)
             except Exception:
                 start = 0
         sliced = items[start : start + limit]
@@ -200,54 +392,97 @@ class ToolRequestStore:
             {
                 "id": it.get("id"),
                 "created_at": it.get("created_at"),
+                "updated_at": it.get("updated_at"),
                 "need": it.get("need"),
                 "type": it.get("type"),
                 "priority": it.get("priority"),
                 "domain": it.get("domain"),
                 "status": it.get("status"),
+                "session": it.get("session"),
+                "revision": it.get("revision"),
             }
             for it in sliced
         ]
-        return {"items": summaries, "cursor": next_cursor}
+        return {"items": summaries, "cursor": next_cursor, "next_page_token": next_cursor}
 
     def get(self, req_id: str) -> Optional[Dict[str, Any]]:
         return self.requests.get(req_id)
 
-    def update(self, req_id: str, changes: Dict[str, Any]) -> Dict[str, Any]:
+    def update(self, req_id: str, changes: Dict[str, Any], *, mode: str = "merge", list_mode: str = "append") -> Dict[str, Any]:
         if req_id not in self.requests:
             raise ToolError("request not found", code=-32602)
-        allowed_status = {"pending", "triaged", "accepted", "implemented", "released", "rejected", "needs_info"}
-        allowed_priority = {"critical", "high", "medium", "low"}
-        clean: Dict[str, Any] = {}
-        if "status" in changes:
-            status = changes["status"]
-            if status not in allowed_status:
-                raise ToolError("invalid status", code=-32602)
-            clean["status"] = status
-        if "priority" in changes:
-            pr = changes["priority"]
-            if pr not in allowed_priority:
-                raise ToolError("invalid priority", code=-32602)
-            clean["priority"] = pr
-        if "tags" in changes:
-            tags = changes["tags"]
-            if tags is not None and (not isinstance(tags, list) or any(not isinstance(t, str) for t in tags)):
-                raise ToolError("tags must be array of strings", code=-32602)
-            clean["tags"] = tags
-        for field in ("owner", "resolution_note"):
-            if field in changes:
-                val = changes[field]
-                if val is not None and not isinstance(val, str):
-                    raise ToolError(f"{field} must be a string", code=-32602)
-                clean[field] = val
+        if mode not in {"merge", "replace"}:
+            raise ToolError("mode must be merge or replace", code=-32602)
+        if list_mode not in {"append", "replace"}:
+            raise ToolError("list_mode must be append or replace", code=-32602)
+        clean = self._validate_update(changes)
         if not clean:
             raise ToolError("no changes provided", code=-32602)
         current = self.requests[req_id].copy()
-        current.update(clean)
-        self.requests[req_id] = current
-        record = {"id": req_id, "ts": datetime.now(timezone.utc).isoformat(), "changes": clean}
+        merged = self._merge_payload(current, clean, mode=mode, list_mode=list_mode)
+        merged["revision"] = int(current.get("revision") or 1) + 1
+        merged["updated_at"] = datetime.now(timezone.utc).isoformat()
+        self.requests[req_id] = self._normalize_entry(merged)
+        record: Dict[str, Any] = {
+            "id": req_id,
+            "ts": merged["updated_at"],
+            "changes": clean,
+            "mode": mode,
+            "list_mode": list_mode,
+        }
+        if "updated_by" in clean:
+            record["updated_by"] = clean["updated_by"]
         self._write_jsonl(TOOL_REQUEST_UPDATES_FILE, record)
-        return current
+        return self.requests[req_id]
+
+    def delete(self, req_id: str) -> Dict[str, Any]:
+        if req_id not in self.requests:
+            raise ToolError("request not found", code=-32602)
+        self.requests.pop(req_id, None)
+        record = {"id": req_id, "ts": datetime.now(timezone.utc).isoformat(), "delete": True}
+        self._write_jsonl(TOOL_REQUEST_UPDATES_FILE, record)
+        return {"ok": True, "deleted_id": req_id}
+
+    def purge(self, *, statuses: Optional[List[str]] = None, older_than_days: Optional[int] = None) -> List[str]:
+        now = datetime.now(timezone.utc)
+        deleted: List[str] = []
+        for req_id, item in list(self.requests.items()):
+            status_ok = True
+            if statuses:
+                status_ok = item.get("status") in statuses
+            age_ok = True
+            if older_than_days is not None:
+                created_at = item.get("created_at")
+                try:
+                    created_dt = datetime.fromisoformat(created_at)
+                    age_ok = (now - created_dt).days >= older_than_days
+                except Exception:
+                    age_ok = False
+            if status_ok and age_ok:
+                self.delete(req_id)
+                deleted.append(req_id)
+        return deleted
+
+    def bulk_update(
+        self, req_ids: List[str], changes: Dict[str, Any], *, mode: str = "merge", list_mode: str = "append"
+    ) -> List[Dict[str, Any]]:
+        if not isinstance(req_ids, list) or any(not isinstance(rid, str) for rid in req_ids):
+            raise ToolError("ids must be an array of strings", code=-32602)
+        if not isinstance(changes, dict):
+            raise ToolError("patch must be an object", code=-32602)
+        updated = []
+        for rid in req_ids:
+            updated.append(self.update(rid, changes, mode=mode, list_mode=list_mode))
+        return updated
+
+    def bulk_delete(self, req_ids: List[str]) -> List[str]:
+        if not isinstance(req_ids, list) or any(not isinstance(rid, str) for rid in req_ids):
+            raise ToolError("ids must be an array of strings", code=-32602)
+        deleted: List[str] = []
+        for rid in req_ids:
+            self.delete(rid)
+            deleted.append(rid)
+        return deleted
 
 
 def _bridge_request(path: str, payload: Optional[Dict[str, Any]] = None, timeout: float = 0.5) -> Any:
@@ -1183,11 +1418,12 @@ light_obj.rotation_euler = (math.radians({rotation[0]}), math.radians({rotation[
             return _make_tool_result("filters must be an object", is_error=True)
         limit = args.get("limit", 50)
         cursor = args.get("cursor")
+        next_page_token = args.get("next_page_token")
         try:
             limit_i = int(limit)
         except Exception:
             return _make_tool_result("limit must be an integer", is_error=True)
-        res = self._tool_request_store.list(filters, limit=limit_i, cursor=cursor)
+        res = self._tool_request_store.list(filters, limit=limit_i, cursor=cursor, next_page_token=next_page_token)
         return _make_tool_result(json.dumps(res), is_error=False)
 
     def _tool_tool_request_get(self, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -1204,7 +1440,9 @@ light_obj.rotation_euler = (math.radians({rotation[0]}), math.radians({rotation[
         if not isinstance(req_id, str):
             return _make_tool_result("id must be a string", is_error=True)
         tests_passed = args.get("tests_passed")
-        changes = {k: v for k, v in args.items() if k not in {"id", "tests_passed"}}
+        mode = args.get("mode", "merge")
+        list_mode = args.get("list_mode", "append")
+        changes = {k: v for k, v in args.items() if k not in {"id", "tests_passed", "mode", "list_mode"}}
         if "status" in changes and changes["status"] == "implemented":
             if tests_passed is not True:
                 return _make_tool_result("tests_passed must be true to mark implemented", is_error=True)
@@ -1212,10 +1450,66 @@ light_obj.rotation_euler = (math.radians({rotation[0]}), math.radians({rotation[
             if related and related not in self._tools:
                 return _make_tool_result("related_tool not found in registry", is_error=True)
         try:
-            updated = self._tool_request_store.update(req_id, changes)
+            updated = self._tool_request_store.update(req_id, changes, mode=mode, list_mode=list_mode)
         except ToolError as exc:
             return _make_tool_result(str(exc), is_error=True)
         return _make_tool_result(json.dumps({"ok": True, "id": req_id, "status": updated.get("status")}), is_error=False)
+
+    def _tool_tool_request_delete(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        req_id = args.get("id")
+        if not isinstance(req_id, str):
+            return _make_tool_result("id must be a string", is_error=True)
+        try:
+            res = self._tool_request_store.delete(req_id)
+        except ToolError as exc:
+            return _make_tool_result(str(exc), is_error=True)
+        return _make_tool_result(json.dumps(res), is_error=False)
+
+    def _tool_tool_request_bulk_update(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        ids = args.get("ids")
+        patch = args.get("patch")
+        mode = args.get("mode", "merge")
+        list_mode = args.get("list_mode", "append")
+        tests_passed = args.get("tests_passed")
+        if not isinstance(ids, list) or any(not isinstance(i, str) for i in ids):
+            return _make_tool_result("ids must be an array of strings", is_error=True)
+        if not isinstance(patch, dict):
+            return _make_tool_result("patch must be an object", is_error=True)
+        if patch.get("status") == "implemented":
+            if tests_passed is not True:
+                return _make_tool_result("tests_passed must be true to mark implemented", is_error=True)
+            for rid in ids:
+                related = self._tool_request_store.requests.get(rid, {}).get("related_tool")
+                if related and related not in self._tools:
+                    return _make_tool_result("related_tool not found in registry", is_error=True)
+        try:
+            updated = self._tool_request_store.bulk_update(ids, patch, mode=mode, list_mode=list_mode)
+        except ToolError as exc:
+            return _make_tool_result(str(exc), is_error=True)
+        return _make_tool_result(json.dumps({"ok": True, "updated_ids": [u.get("id") for u in updated]}), is_error=False)
+
+    def _tool_tool_request_bulk_delete(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        ids = args.get("ids")
+        if not isinstance(ids, list) or any(not isinstance(i, str) for i in ids):
+            return _make_tool_result("ids must be an array of strings", is_error=True)
+        try:
+            deleted = self._tool_request_store.bulk_delete(ids)
+        except ToolError as exc:
+            return _make_tool_result(str(exc), is_error=True)
+        return _make_tool_result(json.dumps({"ok": True, "deleted_ids": deleted}), is_error=False)
+
+    def _tool_tool_request_purge(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        statuses = args.get("status") or []
+        older_than_days = args.get("older_than_days")
+        if statuses and (not isinstance(statuses, list) or any(not isinstance(s, str) for s in statuses)):
+            return _make_tool_result("status must be an array of strings", is_error=True)
+        if older_than_days is not None:
+            try:
+                older_than_days = int(older_than_days)
+            except Exception:
+                return _make_tool_result("older_than_days must be an integer", is_error=True)
+        deleted = self._tool_request_store.purge(statuses=statuses, older_than_days=older_than_days)
+        return _make_tool_result(json.dumps({"ok": True, "deleted_ids": deleted}), is_error=False)
 
     def _tool_tool_request_lint(self, args: Dict[str, Any]) -> Dict[str, Any]:
         tests_passed = args.get("tests_passed", False)

@@ -109,6 +109,16 @@ def register(registry, _: Any, __: Any, ___: Any) -> None:  # noqa: ANN001
                 "api_probe": {"type": "object"},
                 "status": {"type": "string"},
                 "tags": {"type": "array"},
+                "proposed_tool_name": {"type": "string"},
+                "proposed_params_schema": {"type": "object"},
+                "return_schema": {"type": "object"},
+                "depends_on": {"type": "array", "items": {"type": "string"}},
+                "blocks": {"type": "array", "items": {"type": "string"}},
+                "estimated_effort": {"type": "string"},
+                "assigned_to": {"type": "string"},
+                "updated_by": {"type": "string"},
+                "acceptance_criteria": {"type": "array", "items": {"type": "string"}},
+                "implementation_hint": {"type": "string"},
             },
             "required": ["session", "need", "why"],
             "additionalProperties": False,
@@ -120,7 +130,12 @@ def register(registry, _: Any, __: Any, ___: Any) -> None:  # noqa: ANN001
         "List tool requests",
         {
             "type": "object",
-            "properties": {"filters": {"type": "object"}, "limit": {"type": "integer"}, "cursor": {"type": "string"}},
+            "properties": {
+                "filters": {"type": "object"},
+                "limit": {"type": "integer"},
+                "cursor": {"type": "string"},
+                "next_page_token": {"type": "string"},
+            },
             "additionalProperties": False,
         },
         registry._tool_tool_request_list,  # noqa: SLF001
@@ -149,11 +164,86 @@ def register(registry, _: Any, __: Any, ___: Any) -> None:  # noqa: ANN001
                 "owner": {"type": "string"},
                 "resolution_note": {"type": "string"},
                 "tests_passed": {"type": "boolean"},
+                "proposed_tool_name": {"type": "string"},
+                "proposed_params_schema": {"type": "object"},
+                "return_schema": {"type": "object"},
+                "depends_on": {"type": "array", "items": {"type": "string"}},
+                "blocks": {"type": "array", "items": {"type": "string"}},
+                "estimated_effort": {"type": "string"},
+                "assigned_to": {"type": "string"},
+                "updated_by": {"type": "string"},
+                "acceptance_criteria": {"type": "array", "items": {"type": "string"}},
+                "implementation_hint": {"type": "string"},
+                "need": {"type": "string"},
+                "why": {"type": "string"},
+                "type": {"type": "string"},
+                "source": {"type": "string"},
+                "related_tool": {"type": "string"},
+                "failing_call": {"type": "object"},
+                "blender": {"type": "object"},
+                "context": {"type": "object"},
+                "repro": {"type": "object"},
+                "error": {"type": "object"},
+                "api_probe": {"type": "object"},
+                "list_mode": {"type": "string"},
+                "mode": {"type": "string"},
             },
             "required": ["id"],
             "additionalProperties": False,
         },
         registry._tool_tool_request_update,  # noqa: SLF001
+    )
+    reg(
+        "tool-request-delete",
+        "Hard delete a tool request by id",
+        {
+            "type": "object",
+            "properties": {"id": {"type": "string"}},
+            "required": ["id"],
+            "additionalProperties": False,
+        },
+        registry._tool_tool_request_delete,  # noqa: SLF001
+    )
+    reg(
+        "tool-request-bulk-update",
+        "Bulk update multiple tool requests",
+        {
+            "type": "object",
+            "properties": {
+                "ids": {"type": "array", "items": {"type": "string"}},
+                "patch": {"type": "object"},
+                "mode": {"type": "string"},
+                "list_mode": {"type": "string"},
+                "tests_passed": {"type": "boolean"},
+            },
+            "required": ["ids", "patch"],
+            "additionalProperties": False,
+        },
+        registry._tool_tool_request_bulk_update,  # noqa: SLF001
+    )
+    reg(
+        "tool-request-bulk-delete",
+        "Bulk delete tool requests",
+        {
+            "type": "object",
+            "properties": {"ids": {"type": "array", "items": {"type": "string"}}},
+            "required": ["ids"],
+            "additionalProperties": False,
+        },
+        registry._tool_tool_request_bulk_delete,  # noqa: SLF001
+    )
+    reg(
+        "tool-request-purge",
+        "Purge tool requests by status and age",
+        {
+            "type": "object",
+            "properties": {
+                "status": {"type": "array", "items": {"type": "string"}},
+                "older_than_days": {"type": "integer"},
+            },
+            "additionalProperties": False,
+        },
+        registry._tool_tool_request_purge,  # noqa: SLF001
     )
     reg(
         "tool-request-lint",
