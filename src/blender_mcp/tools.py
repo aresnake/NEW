@@ -181,9 +181,7 @@ class ToolRequestStore:
         self.requests[req_id] = self._normalize_entry(merged)
 
     def _write_jsonl(self, path: Path, entry: Dict[str, Any]) -> None:
-        get_tool_request_dir().mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        _atomic_append_jsonl(path, json.dumps(entry, ensure_ascii=False) + "\n")
 
     def _validate_new(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         out: Dict[str, Any] = {}
@@ -597,6 +595,24 @@ class ToolRequestStore:
         return {"ok": True, "removed": removed}
 
 
+def _atomic_append_jsonl(path: Path, line: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f"{path.name}.tmp-{uuid.uuid4().hex}")
+    existing: bytes = b""
+    if path.exists():
+        try:
+            existing = path.read_bytes()
+        except Exception:
+            existing = b""
+    with tmp_path.open("wb") as fh:
+        if existing:
+            fh.write(existing)
+        fh.write(line.encode("utf-8"))
+        fh.flush()
+        os.fsync(fh.fileno())
+    tmp_path.replace(path)
+
+
 def _bridge_request(path: str, payload: Optional[Dict[str, Any]] = None, timeout: float = 0.5) -> Any:
     url = f"{BRIDGE_URL}{path}"
     use_timeout = _get_timeout(timeout)
@@ -623,7 +639,6 @@ def _make_tool_result(text: str, is_error: bool = False) -> Dict[str, Any]:
 
 def _append_action(tool: str, arguments: Dict[str, Any], result: Dict[str, Any]) -> None:
     try:
-        RUNS_DIR.mkdir(parents=True, exist_ok=True)
         summary = ""
         content = result.get("content")
         if isinstance(content, list) and content:
@@ -640,8 +655,7 @@ def _append_action(tool: str, arguments: Dict[str, Any], result: Dict[str, Any])
             "isError": bool(result.get("isError")),
             "summary": summary,
         }
-        with RUNS_FILE.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        _atomic_append_jsonl(RUNS_FILE, json.dumps(entry, ensure_ascii=False) + "\n")
     except Exception as exc:  # noqa: BLE001
         try:
             sys.stderr.write(f"[replay] failed to log action: {exc}\n")
@@ -652,9 +666,7 @@ def _append_action(tool: str, arguments: Dict[str, Any], result: Dict[str, Any])
 
 def _append_request(entry: Dict[str, Any]) -> None:
     try:
-        RUNS_DIR.mkdir(parents=True, exist_ok=True)
-        with REQUESTS_FILE.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        _atomic_append_jsonl(REQUESTS_FILE, json.dumps(entry, ensure_ascii=False) + "\n")
     except Exception as exc:  # noqa: BLE001
         try:
             sys.stderr.write(f"[model] failed to log request: {exc}\n")
