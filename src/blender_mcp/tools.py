@@ -151,8 +151,9 @@ class ToolRequestStore:
 
     def _load(self) -> None:
         get_tool_request_dir().mkdir(parents=True, exist_ok=True)
-        base_items = self._load_jsonl(get_tool_request_file())
-        updates = self._load_jsonl(get_tool_request_updates_file())
+        warn = ('TOOL_REQUEST_DATA_DIR' not in os.environ)
+        base_items = self._load_jsonl(get_tool_request_file(), warn_on_bad_line=warn)
+        updates = self._load_jsonl(get_tool_request_updates_file(), warn_on_bad_line=warn)
         for item in base_items:
             if isinstance(item, dict) and "id" in item:
                 self.requests[item["id"]] = self._normalize_entry(item)
