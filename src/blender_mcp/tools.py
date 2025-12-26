@@ -521,6 +521,81 @@ class ToolRequestStore:
                 deleted.append({"id": rid, "ok": False, "error": str(exc)})
         return deleted
 
+    def _resolve_updates_file(self) -> Path:
+        primary = get_tool_request_updates_file()
+        legacy = get_tool_request_dir() / "tool_request_updates.jsonl"
+        if primary.exists():
+            return primary
+        if legacy.exists():
+            return legacy
+        return primary
+
+    def _tail_jsonl(self, path: Path, n: int) -> Dict[str, Any]:
+        if not path.exists():
+            return {"path": str(path), "exists": False, "lines": []}
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()[-n:]
+        except Exception as exc:  # noqa: BLE001
+            return {"path": str(path), "exists": True, "error": str(exc), "lines": []}
+        entries = []
+        for line in lines:
+            entry: Dict[str, Any] = {"raw": line}
+            try:
+                entry["parsed"] = json.loads(line)
+                entry["ok"] = True
+            except json.JSONDecodeError as exc:  # noqa: BLE001
+                entry["ok"] = False
+                entry["error"] = str(exc)
+            entries.append(entry)
+        return {"path": str(path), "exists": True, "lines": entries}
+
+    def info(self) -> Dict[str, Any]:
+        base_file = get_tool_request_file()
+        updates_file = self._resolve_updates_file()
+        return {
+            "ok": True,
+            "data_dir": str(get_tool_request_dir()),
+            "env_dir": os.environ.get("TOOL_REQUEST_DATA_DIR"),
+            "files": {
+                "base": {"path": str(base_file), "exists": base_file.exists()},
+                "updates": {"path": str(updates_file), "exists": updates_file.exists()},
+            },
+            "counts": {"loaded_requests": len(self.requests)},
+        }
+
+    def tail(self, *, n: int = 20, which: str = "both") -> Dict[str, Any]:
+        if not isinstance(n, int):
+            raise ToolError("n must be an integer", code=-32602)
+        if n < 1 or n > 500:
+            raise ToolError("n must be between 1 and 500", code=-32602)
+        if which not in {"base", "updates", "both"}:
+            raise ToolError("which must be base, updates, or both", code=-32602)
+        base_file = get_tool_request_file()
+        updates_file = self._resolve_updates_file()
+        result: Dict[str, Any] = {"ok": True}
+        if which in {"base", "both"}:
+            result["base"] = self._tail_jsonl(base_file, n)
+        if which in {"updates", "both"}:
+            result["updates"] = self._tail_jsonl(updates_file, n)
+        return result
+
+    def clear(self, *, confirm: bool) -> Dict[str, Any]:
+        if confirm is not True:
+            raise ToolError("confirm must be true to delete tool-request data", code=-32602)
+        removed: List[str] = []
+        for path in {
+            get_tool_request_file(),
+            get_tool_request_updates_file(),
+            get_tool_request_dir() / "tool_request_updates.jsonl",
+        }:
+            try:
+                path.unlink()
+                removed.append(str(path))
+            except FileNotFoundError:
+                continue
+        self.requests.clear()
+        return {"ok": True, "removed": removed}
+
 
 def _bridge_request(path: str, payload: Optional[Dict[str, Any]] = None, timeout: float = 0.5) -> Any:
     url = f"{BRIDGE_URL}{path}"
@@ -1464,6 +1539,33 @@ light_obj.rotation_euler = (math.radians({rotation[0]}), math.radians({rotation[
         }
         _append_request(entry)
         return _make_tool_result("model session ended", is_error=False)
+
+    def _tool_tool_requests_info(self, _: Dict[str, Any]) -> Dict[str, Any]:
+        info = self._tool_request_store.info()
+        return _make_tool_result(json.dumps(info), is_error=False)
+
+    def _tool_tool_requests_tail(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        n_raw = args.get("n", 20)
+        which = args.get("which", "both") or "both"
+        try:
+            n = int(n_raw)
+        except Exception:
+            return _make_tool_result("n must be an integer", is_error=True)
+        try:
+            result = self._tool_request_store.tail(n=n, which=which)
+        except ToolError as exc:
+            return _make_tool_result(str(exc), is_error=True)
+        return _make_tool_result(json.dumps(result), is_error=False)
+
+    def _tool_tool_requests_clear(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        confirm = args.get("confirm", False)
+        if not isinstance(confirm, bool):
+            return _make_tool_result("confirm must be a boolean", is_error=True)
+        try:
+            result = self._tool_request_store.clear(confirm=confirm)
+        except ToolError as exc:
+            return _make_tool_result(str(exc), is_error=True)
+        return _make_tool_result(json.dumps(result), is_error=False)
 
     def _tool_tool_request(self, args: Dict[str, Any]) -> Dict[str, Any]:
         payload = dict(args)
