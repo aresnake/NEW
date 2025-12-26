@@ -666,7 +666,7 @@ def _bridge_request(path: str, payload: Optional[Dict[str, Any]] = None, timeout
 
 
 def _make_tool_result(text: str, is_error: bool = False) -> Dict[str, Any]:
-    return {"ok": not is_error, "content": [{"type": "text", "text": text}], "isError": is_error}
+    return {"content": [{"type": "text", "text": text}], "isError": is_error}
 
 
 def _append_action(tool: str, arguments: Dict[str, Any], result: Dict[str, Any]) -> None:
@@ -770,13 +770,15 @@ class ToolRegistry:
         result: Dict[str, Any]
         try:
             result = tool.handler(arguments or {})
+            if isinstance(result, dict) and "ok" not in result and "isError" in result:
+                result = {**result, "ok": not bool(result.get("isError"))}
             if not isinstance(result, dict):
                 raise ToolError("Tool handler must return an object", code=-32099)
             ok_val = result.get("ok")
             if not isinstance(ok_val, bool):
                 raise ToolError("Tool handler must include ok boolean", code=-32099)
         except ToolError as exc:
-            result = _make_tool_result(str(exc), is_error=True)
+            result = {"ok": False, "content": [{"type": "text", "text": str(exc)}], "isError": True}
         if log_action and name not in ("replay-list", "replay-run", "model-start", "model-step", "model-end", "tool-request"):
             _append_action(name, arguments or {}, result)
         return result
