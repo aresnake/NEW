@@ -249,3 +249,19 @@ bpy.ops.mesh.separate(type={json.dumps(sep_type)})
         {"type": "object", "properties": {}, "additionalProperties": False},
         _mesh_bridge_edge_loops,
     )
+    reg(
+        "blender-mark-sharp-edges",
+        "Mark or clear sharp edges",
+        {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "mode": {"type": "string"},
+                "selection": {"type": "string"},
+                "angle_degrees": {"type": "number"},
+            },
+            "required": ["name", "mode", "selection"],
+            "additionalProperties": False,
+        },
+        registry._tool_mark_sharp_edges,  # noqa: SLF001
+    )

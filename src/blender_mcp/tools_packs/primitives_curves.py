@@ -123,6 +123,41 @@ def register(registry, _: Any, __: Any, ___: Any) -> None:  # noqa: ANN001
         registry._tool_add_torus,  # noqa: SLF001
     )
     reg(
+        "blender-create-empty",
+        "Create an Empty object",
+        {
+            "type": "object",
+            "properties": {
+                "type": {"type": "string"},
+                "name": {"type": "string"},
+                "size": {"type": "number"},
+                "location": {"type": "array"},
+                "rotation": {"type": "array"},
+            },
+            "required": ["type"],
+            "additionalProperties": False,
+        },
+        registry._tool_create_empty,  # noqa: SLF001
+    )
+    reg(
+        "blender-create-curve",
+        "Create a curve object",
+        {
+            "type": "object",
+            "properties": {
+                "type": {"type": "string"},
+                "name": {"type": "string"},
+                "location": {"type": "array"},
+                "radius": {"type": "number"},
+                "size": {"type": "number"},
+                "resolution": {"type": "integer"},
+            },
+            "required": ["type"],
+            "additionalProperties": False,
+        },
+        registry._tool_create_curve,  # noqa: SLF001
+    )
+    reg(
         "blender-duplicate-object",
         "Duplicate an object",
         {
