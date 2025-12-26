@@ -1,5 +1,6 @@
 import sys
 import traceback
+import warnings
 from typing import Any, Dict, Optional
 
 from .protocol import PROTOCOL_VERSION, make_error, make_result, parse_message, serialize_message
@@ -14,6 +15,7 @@ class StdioServer:
         self._stdin = stdin or sys.stdin
         self._stdout = stdout or sys.stdout
         self._stderr = stderr or sys.stderr
+        self._redirect_warnings()
 
     def _log_error(self, message: str) -> None:
         try:
@@ -29,6 +31,18 @@ class StdioServer:
         except Exception:
             pass
 
+    def _redirect_warnings(self) -> None:
+        def _showwarning(message, category, filename, lineno, file=None, line=None) -> None:
+            target = file or self._stderr
+            try:
+                text = warnings.formatwarning(message, category, filename, lineno, line)
+                target.write(text)
+                target.flush()
+            except Exception:
+                pass
+
+        warnings.showwarning = _showwarning
+
     def run(self) -> None:
         while True:
             line = self._stdin.readline()
@@ -40,7 +54,13 @@ class StdioServer:
             if response is None:
                 continue
             try:
-                self._stdout.write(serialize_message(response))
+                serialized = serialize_message(response)
+            except Exception as exc:
+                self._log_error(f"Failed to serialize response: {exc}")
+                self._log_exception()
+                continue
+            try:
+                self._stdout.write(serialized)
                 self._stdout.flush()
             except Exception as exc:
                 self._log_error(f"Failed to write response: {exc}")
