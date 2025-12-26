@@ -132,7 +132,7 @@ class ToolRequestStore:
                 raise ToolError("examples must contain strings or objects", code=-32602)
         return examples
 
-    def _load_jsonl(self, path: Path) -> List[Dict[str, Any]]:
+    def _load_jsonl(self, path: Path, warn_on_bad_line: bool = True) -> List[Dict[str, Any]]:
         items: List[Dict[str, Any]] = []
         if not path.exists():
             return items
@@ -144,7 +144,7 @@ class ToolRequestStore:
                     items.append(json.loads(line))
                 except json.JSONDecodeError as exc:
                     if warn_on_bad_line:
-                warnings.warn(f"tool-request: skipping corrupted line in {path.name}: {exc}")
+                        warnings.warn(f"tool-request: skipping corrupted line in {path.name}: {exc}")
         except Exception as exc:  # noqa: BLE001
             warnings.warn(f"tool-request: failed reading {path}: {exc}")
         return items
