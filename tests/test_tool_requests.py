@@ -9,6 +9,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from blender_mcp import tools
+import pytest
 
 
 def _setup_env(monkeypatch, tmp_path):
@@ -204,5 +205,6 @@ def test_corrupted_jsonl_lines_skipped(monkeypatch, tmp_path):
     # precreate files with a bad line
     tmp_path.joinpath("tool_requests.jsonl").write_text('{"id": "good", "need": "x", "why": "y", "session": "s"}\n{bad line}', encoding="utf-8")
     _setup_env(monkeypatch, tmp_path)
-    registry = tools.ToolRegistry()
+    with pytest.warns(UserWarning, match=r"tool-request: skipping corrupted line"):
+        registry = tools.ToolRegistry()
     assert "good" in registry._tool_request_store.requests
