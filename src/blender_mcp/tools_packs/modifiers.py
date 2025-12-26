@@ -34,6 +34,17 @@ def register(registry, _: Any, __: Any, ___: Any) -> None:  # noqa: ANN001
         registry._tool_apply_modifier,  # noqa: SLF001
     )
     reg(
+        "blender-list-modifiers",
+        "List modifiers on an object",
+        {
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"],
+            "additionalProperties": False,
+        },
+        registry._tool_list_modifiers,  # noqa: SLF001
+    )
+    reg(
         "blender-boolean",
         "Add a boolean modifier",
         {

@@ -148,9 +148,22 @@ def register(registry, _: Any, __: Any, ___: Any) -> None:  # noqa: ANN001
                 "tags": {"type": "array"},
                 "owner": {"type": "string"},
                 "resolution_note": {"type": "string"},
+                "tests_passed": {"type": "boolean"},
             },
             "required": ["id"],
             "additionalProperties": False,
         },
         registry._tool_tool_request_update,  # noqa: SLF001
+    )
+    reg(
+        "tool-request-lint",
+        "Lint tool requests for duplicates and implementation status",
+        {
+            "type": "object",
+            "properties": {
+                "tests_passed": {"type": "boolean"},
+            },
+            "additionalProperties": False,
+        },
+        registry._tool_tool_request_lint,  # noqa: SLF001
     )

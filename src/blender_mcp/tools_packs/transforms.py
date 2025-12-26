@@ -58,6 +58,17 @@ def register(registry, _: Any, __: Any, ___: Any) -> None:  # noqa: ANN001
         registry._tool_apply_transforms,  # noqa: SLF001
     )
     reg(
+        "blender-convert-object",
+        "Convert an object to another type",
+        {
+            "type": "object",
+            "properties": {"name": {"type": "string"}, "target": {"type": "string"}},
+            "required": ["name", "target"],
+            "additionalProperties": False,
+        },
+        registry._tool_convert_object,  # noqa: SLF001
+    )
+    reg(
         "blender-set-origin",
         "Set object origin",
         {
@@ -67,6 +78,31 @@ def register(registry, _: Any, __: Any, ___: Any) -> None:  # noqa: ANN001
             "additionalProperties": False,
         },
         registry._tool_set_origin,  # noqa: SLF001
+    )
+    reg(
+        "blender-set-3d-cursor",
+        "Set 3D cursor location/rotation",
+        {
+            "type": "object",
+            "properties": {"location": {"type": "array"}, "rotation": {"type": "array"}},
+            "required": ["location"],
+            "additionalProperties": False,
+        },
+        registry._tool_set_3d_cursor,  # noqa: SLF001
+    )
+    reg(
+        "blender-snap",
+        "Snap object to grid/cursor/active",
+        {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "target": {"type": "string"},
+            },
+            "required": ["name", "target"],
+            "additionalProperties": False,
+        },
+        registry._tool_snap,  # noqa: SLF001
     )
     reg(
         "blender-align-to-axis",

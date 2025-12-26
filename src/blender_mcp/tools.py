@@ -747,6 +747,124 @@ if obj is not None:
             return _make_tool_result(data.get("error") or "Failed to add torus", is_error=True)
         return _make_tool_result("Added torus", is_error=False)
 
+    def _tool_create_empty(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        empty_type = (args.get("type") or "PLAIN_AXES").upper()
+        name = args.get("name") or "Empty"
+        size = args.get("size", 1.0)
+        location = self._validate_vector(args.get("location"), name="location") or [0.0, 0.0, 0.0]
+        rotation = self._validate_vector(args.get("rotation"), name="rotation") or [0.0, 0.0, 0.0]
+        valid_types = {"PLAIN_AXES", "ARROWS", "SINGLE_ARROW", "CIRCLE", "CUBE", "SPHERE"}
+        if empty_type not in valid_types:
+            raise ToolError("type must be one of PLAIN_AXES, ARROWS, SINGLE_ARROW, CIRCLE, CUBE, SPHERE", code=-32602)
+        try:
+            size_f = float(size)
+        except Exception:
+            raise ToolError("size must be a number", code=-32602)
+        if size_f <= 0:
+            raise ToolError("size must be > 0", code=-32602)
+        code = f"""
+import bpy, math
+etype = {json.dumps(empty_type)}
+name = {json.dumps(name)}
+loc = ({location[0]}, {location[1]}, {location[2]})
+rot = ({rotation[0]}, {rotation[1]}, {rotation[2]})
+obj = bpy.data.objects.new(name, None)
+obj.empty_display_type = etype
+obj.empty_display_size = {size_f}
+obj.location = loc
+obj.rotation_euler = tuple(math.radians(v) for v in rot)
+bpy.context.scene.collection.objects.link(obj)
+result = {{
+    "name": obj.name,
+    "type": etype,
+    "location": [obj.location.x, obj.location.y, obj.location.z],
+    "rotation": [math.degrees(v) for v in obj.rotation_euler],
+    "size": obj.empty_display_size,
+}}
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to create empty", is_error=True)
+        info = data.get("result")
+        if isinstance(info, dict):
+            text = f"Created empty {info.get('name')} ({info.get('type')})"
+        else:
+            text = f"Created empty {name} ({empty_type})"
+        return _make_tool_result(text, is_error=False)
+
+    def _tool_create_curve(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        curve_type = (args.get("type") or "BEZIER").upper()
+        name = args.get("name") or "Curve"
+        location = self._validate_vector(args.get("location"), name="location") or [0.0, 0.0, 0.0]
+        radius = args.get("radius", args.get("size", 1.0))
+        resolution = args.get("resolution", 12)
+        valid = {"BEZIER", "NURBS", "PATH", "CIRCLE"}
+        if curve_type not in valid:
+            raise ToolError("type must be BEZIER, NURBS, PATH, or CIRCLE", code=-32602)
+        try:
+            radius_f = float(radius)
+        except Exception:
+            raise ToolError("radius must be a number", code=-32602)
+        if radius_f <= 0:
+            raise ToolError("radius must be > 0", code=-32602)
+        try:
+            res_i = int(resolution)
+        except Exception:
+            raise ToolError("resolution must be an integer", code=-32602)
+        code = f"""
+import bpy, math
+curve_type = {json.dumps(curve_type)}
+name = {json.dumps(name)}
+radius = {radius_f}
+res_u = {res_i}
+loc = ({location[0]}, {location[1]}, {location[2]})
+curve_data = bpy.data.curves.new(name=name + "_Curve", type='CURVE')
+curve_data.dimensions = '3D'
+curve_data.resolution_u = res_u
+if curve_type == "BEZIER":
+    spline = curve_data.splines.new('BEZIER')
+    spline.bezier_points.add(1)
+    pts = [(0.0, 0.0, 0.0), (radius, 0.0, 0.0)]
+    for pt, co in zip(spline.bezier_points, pts):
+        pt.co = co
+        pt.handle_left_type = 'AUTO'
+        pt.handle_right_type = 'AUTO'
+elif curve_type in {{"NURBS", "PATH"}}:
+    spline = curve_data.splines.new('NURBS')
+    spline.points.add(3)
+    pts = [(0.0, 0.0, 0.0), (radius, 0.0, 0.0), (radius, radius, 0.0), (0.0, radius, 0.0)]
+    for pt, co in zip(spline.points, pts):
+        pt.co = (co[0], co[1], co[2], 1.0)
+    spline.use_endpoint_u = True
+elif curve_type == "CIRCLE":
+    spline = curve_data.splines.new('NURBS')
+    spline.points.add(7)
+    pts = [
+        (1.0, 0.0, 0.0), (0.7071, 0.7071, 0.0), (0.0, 1.0, 0.0), (-0.7071, 0.7071, 0.0),
+        (-1.0, 0.0, 0.0), (-0.7071, -0.7071, 0.0), (0.0, -1.0, 0.0), (0.7071, -0.7071, 0.0)
+    ]
+    for pt, co in zip(spline.points, pts):
+        pt.co = (co[0] * radius, co[1] * radius, co[2], 1.0)
+    spline.use_cyclic_u = True
+obj = bpy.data.objects.new(name, curve_data)
+bpy.context.scene.collection.objects.link(obj)
+obj.location = loc
+result = {{
+    "name": obj.name,
+    "type": curve_type,
+    "location": [obj.location.x, obj.location.y, obj.location.z],
+}}
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to create curve", is_error=True)
+        info = data.get("result")
+        if isinstance(info, dict):
+            text = f"Created curve {info.get('name')} ({info.get('type')})"
+        else:
+            text = f"Created curve {name} ({curve_type})"
+        return _make_tool_result(text, is_error=False)
+
     def _tool_duplicate_object(self, args: Dict[str, Any]) -> Dict[str, Any]:
         name = args.get("name")
         new_name = args.get("new_name")
@@ -1085,12 +1203,47 @@ light_obj.rotation_euler = (math.radians({rotation[0]}), math.radians({rotation[
         req_id = args.get("id")
         if not isinstance(req_id, str):
             return _make_tool_result("id must be a string", is_error=True)
-        changes = {k: v for k, v in args.items() if k != "id"}
+        tests_passed = args.get("tests_passed")
+        changes = {k: v for k, v in args.items() if k not in {"id", "tests_passed"}}
+        if "status" in changes and changes["status"] == "implemented":
+            if tests_passed is not True:
+                return _make_tool_result("tests_passed must be true to mark implemented", is_error=True)
+            related = self._tool_request_store.requests.get(req_id, {}).get("related_tool")
+            if related and related not in self._tools:
+                return _make_tool_result("related_tool not found in registry", is_error=True)
         try:
             updated = self._tool_request_store.update(req_id, changes)
         except ToolError as exc:
             return _make_tool_result(str(exc), is_error=True)
         return _make_tool_result(json.dumps({"ok": True, "id": req_id, "status": updated.get("status")}), is_error=False)
+
+    def _tool_tool_request_lint(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        tests_passed = args.get("tests_passed", False)
+        if not isinstance(tests_passed, bool):
+            return _make_tool_result("tests_passed must be a boolean", is_error=True)
+        requests = list(self._tool_request_store.requests.values())
+        tool_names = set(self._tools.keys())
+        seen_keys: Dict[str, str] = {}
+        duplicates = []
+        for item in requests:
+            domain = str(item.get("domain", "")).lower()
+            typ = str(item.get("type", "")).lower()
+            need = str(item.get("need", "")).strip().lower()
+            norm_key = f"{domain}::{typ}::{need}"
+            if norm_key in seen_keys:
+                duplicates.append({"key": norm_key, "ids": [seen_keys[norm_key], item.get("id")]})
+            else:
+                seen_keys[norm_key] = item.get("id")
+        issues = []
+        for item in requests:
+            if item.get("status") == "implemented":
+                related = item.get("related_tool")
+                if not related or related not in tool_names:
+                    issues.append({"id": item.get("id"), "reason": "missing_tool"})
+                elif not tests_passed:
+                    issues.append({"id": item.get("id"), "reason": "tests_not_confirmed"})
+        payload = {"ok": True, "duplicates": duplicates, "issues": issues, "count": len(requests)}
+        return _make_tool_result(json.dumps(payload), is_error=False)
 
     def _resolve_intent(self, text: str) -> Dict[str, Any]:
         if not isinstance(text, str):
@@ -1448,6 +1601,119 @@ bpy.ops.object.delete(use_global=False)
             return _make_tool_result(data.get("error") or "Failed to delete all", is_error=True)
         return _make_tool_result("Deleted all objects", is_error=False)
 
+    def _tool_convert_object(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        name = args.get("name")
+        target = (args.get("target") or "").upper()
+        valid_targets = {"MESH", "CURVE"}
+        if not isinstance(name, str):
+            raise ToolError("name must be a string", code=-32602)
+        if target not in valid_targets:
+            raise ToolError("target must be MESH or CURVE", code=-32602)
+        code = f"""
+import bpy
+name = {json.dumps(name)}
+target = {json.dumps(target)}
+obj = bpy.data.objects.get(name)
+if obj is None:
+    raise ValueError("Object not found")
+if target == "MESH" and obj.type not in {{"CURVE", "MESH", "FONT", "SURFACE", "TEXT"}}:
+    raise ValueError("Object cannot be converted to mesh")
+if target == "CURVE" and obj.type not in {{"MESH", "CURVE"}}:
+    raise ValueError("Object cannot be converted to curve")
+bpy.ops.object.mode_set(mode='OBJECT')
+bpy.ops.object.select_all(action='DESELECT')
+obj.select_set(True)
+bpy.context.view_layer.objects.active = obj
+bpy.ops.object.convert(target=target)
+new_obj = bpy.context.view_layer.objects.active or obj
+result = {{
+    "name": new_obj.name,
+    "type": new_obj.type,
+}}
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=8.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to convert object", is_error=True)
+        info = data.get("result")
+        if isinstance(info, dict):
+            text = f"Converted {name} to {info.get('type')} as {info.get('name')}"
+        else:
+            text = f"Converted {name} to {target}"
+        return _make_tool_result(text, is_error=False)
+
+    def _tool_set_3d_cursor(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        location = self._validate_vector(args.get("location"), name="location")
+        rotation = self._validate_vector(args.get("rotation"), name="rotation")
+        if location is None:
+            raise ToolError("location must be an array of 3 numbers", code=-32602)
+        if rotation is None:
+            rotation = [0.0, 0.0, 0.0]
+        code = f"""
+import bpy, math
+loc = ({location[0]}, {location[1]}, {location[2]})
+rot = ({rotation[0]}, {rotation[1]}, {rotation[2]})
+cursor = bpy.context.scene.cursor
+cursor.location = loc
+cursor.rotation_euler = tuple(math.radians(v) for v in rot)
+result = {{
+    "location": [cursor.location.x, cursor.location.y, cursor.location.z],
+    "rotation": [math.degrees(v) for v in cursor.rotation_euler],
+}}
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=3.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to set cursor", is_error=True)
+        info = data.get("result")
+        if isinstance(info, dict):
+            text = f"Cursor -> loc {info.get('location')} rot {info.get('rotation')}"
+        else:
+            text = "Cursor updated"
+        return _make_tool_result(text, is_error=False)
+
+    def _tool_snap(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        name = args.get("name")
+        target = (args.get("target") or "").upper()
+        if not isinstance(name, str):
+            raise ToolError("name must be a string", code=-32602)
+        valid_targets = {"GRID", "CURSOR", "ACTIVE", "INCREMENT"}
+        if target not in valid_targets:
+            raise ToolError("target must be GRID, CURSOR, ACTIVE, or INCREMENT", code=-32602)
+        code = f"""
+import bpy, math
+name = {json.dumps(name)}
+target = {json.dumps(target)}
+obj = bpy.data.objects.get(name)
+if obj is None:
+    raise ValueError("Object not found")
+before = {{
+    "location": [obj.location.x, obj.location.y, obj.location.z],
+    "rotation": [math.degrees(v) for v in obj.rotation_euler],
+    "scale": [obj.scale.x, obj.scale.y, obj.scale.z],
+}}
+new_loc = before["location"]
+if target in {{"GRID", "INCREMENT"}}:
+    new_loc = [round(obj.location.x), round(obj.location.y), round(obj.location.z)]
+elif target == "CURSOR":
+    cur = bpy.context.scene.cursor.location
+    new_loc = [cur.x, cur.y, cur.z]
+elif target == "ACTIVE":
+    active = bpy.context.view_layer.objects.active
+    if active is None:
+        raise ValueError("Active object required for ACTIVE snap")
+    new_loc = [active.location.x, active.location.y, active.location.z]
+obj.location = tuple(new_loc)
+after = {{
+    "location": [obj.location.x, obj.location.y, obj.location.z],
+    "rotation": [math.degrees(v) for v in obj.rotation_euler],
+    "scale": [obj.scale.x, obj.scale.y, obj.scale.z],
+}}
+result = {{"before": before, "after": after, "target": target}}
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to snap", is_error=True)
+        return _make_tool_result("Snapped object", is_error=False)
+
     def _tool_reset_transform(self, args: Dict[str, Any]) -> Dict[str, Any]:
         name = args.get("name")
         if not isinstance(name, str):
@@ -1766,6 +2032,72 @@ finally:
             return _make_tool_result(data.get("error") or "Failed to triangulate", is_error=True)
         return _make_tool_result(f"Triangulated {name} with {method}", is_error=False)
 
+    def _tool_mark_sharp_edges(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        name = args.get("name")
+        mode = (args.get("mode") or "").lower()
+        selection = (args.get("selection") or "").lower()
+        angle_deg = args.get("angle_degrees", 30.0)
+        if not isinstance(name, str):
+            raise ToolError("name must be a string", code=-32602)
+        if mode not in ("mark", "clear"):
+            raise ToolError("mode must be 'mark' or 'clear'", code=-32602)
+        if selection not in ("selected", "by_angle"):
+            raise ToolError("selection must be 'selected' or 'by_angle'", code=-32602)
+        if selection == "by_angle":
+            try:
+                angle_f = float(angle_deg)
+            except Exception:
+                raise ToolError("angle_degrees must be a number", code=-32602)
+            if angle_f <= 0 or angle_f > 180:
+                raise ToolError("angle_degrees must be between 0 and 180", code=-32602)
+        else:
+            angle_f = 30.0
+        clear_flag = mode == "clear"
+        code = f"""
+import bpy, bmesh, math
+name = {json.dumps(name)}
+clear_flag = {clear_flag}
+selection_mode = {json.dumps(selection)}
+angle_rad = math.radians({angle_f})
+obj = bpy.data.objects.get(name)
+if obj is None:
+    raise ValueError("Object not found")
+if obj.type != 'MESH':
+    raise ValueError("Object is not a mesh")
+initial_mode = obj.mode
+restore_mode = initial_mode if initial_mode in {{'EDIT', 'OBJECT'}} else 'OBJECT'
+bpy.ops.object.mode_set(mode='OBJECT')
+bpy.ops.object.select_all(action='DESELECT')
+obj.select_set(True)
+bpy.context.view_layer.objects.active = obj
+try:
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_mode(type='EDGE')
+    if selection_mode == "by_angle":
+        bpy.ops.mesh.select_all(action='DESELECT')
+        bpy.ops.mesh.edges_select_sharp(sharpness=angle_rad)
+    bm = bmesh.from_edit_mesh(obj.data)
+    bm.edges.ensure_lookup_table()
+    selected_edges = [e for e in bm.edges if e.select]
+    if not selected_edges:
+        raise RuntimeError("No edges selected")
+    bpy.ops.mesh.mark_sharp(clear=clear_flag)
+    bpy.ops.object.mode_set(mode='OBJECT')
+    sharp_count = sum(1 for e in obj.data.edges if getattr(e, "use_edge_sharp", False))
+    result = {{"affected": len(selected_edges), "sharp_edges": sharp_count}}
+finally:
+    bpy.ops.object.mode_set(mode=restore_mode)
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=8.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to mark sharp edges", is_error=True)
+        info = data.get("result") or {}
+        if isinstance(info, dict):
+            text = f"{'Cleared' if clear_flag else 'Marked'} sharp on {info.get('affected', 0)} edges"
+        else:
+            text = "Updated sharp edges"
+        return _make_tool_result(text, is_error=False)
+
     def _tool_uv_unwrap(self, args: Dict[str, Any]) -> Dict[str, Any]:
         name = args.get("name")
         method = (args.get("method") or "ANGLE_BASED").upper()
@@ -1834,9 +2166,18 @@ finally:
             "decimate": "DECIMATE",
             "weld": "WELD",
             "triangulate": "TRIANGULATE",
+            "screw": "SCREW",
+            "edge_split": "EDGE_SPLIT",
+            "shrinkwrap": "SHRINKWRAP",
+            "lattice": "LATTICE",
+            "skin": "SKIN",
         }
         if mod_type not in type_map:
-            raise ToolError("type must be one of mirror,array,solidify,bevel,subdivision,boolean,decimate,weld,triangulate", code=-32602)
+            raise ToolError(
+                "type must be one of mirror,array,solidify,bevel,subdivision,boolean,decimate,weld,triangulate,"
+                "screw,edge_split,shrinkwrap,lattice,skin",
+                code=-32602,
+            )
         clean_settings: Dict[str, Any] = {}
         if mod_type == "mirror":
             for axis_key in ("use_axis_x", "use_axis_y", "use_axis_z"):
@@ -1845,6 +2186,18 @@ finally:
                     if not isinstance(val, bool):
                         raise ToolError(f"{axis_key} must be a boolean", code=-32602)
                     clean_settings[axis_key] = val
+            for opt_key, prop in (("clipping", "use_clip"), ("merge", "use_mirror_merge")):
+                val = settings.get(opt_key)
+                if val is not None:
+                    if not isinstance(val, bool):
+                        raise ToolError(f"{opt_key} must be a boolean", code=-32602)
+                    clean_settings[prop] = val
+            merge_threshold = settings.get("merge_threshold")
+            if merge_threshold is not None:
+                try:
+                    clean_settings["merge_threshold"] = float(merge_threshold)
+                except Exception:
+                    raise ToolError("merge_threshold must be a number", code=-32602)
         if mod_type == "array":
             count = settings.get("count")
             if count is not None:
@@ -1862,6 +2215,19 @@ finally:
                 except Exception:
                     raise ToolError("relative_offset must be an array of 3 numbers", code=-32602)
                 clean_settings["relative_offset"] = rel_vals
+            offset_obj = settings.get("offset_object")
+            if offset_obj is not None:
+                if not isinstance(offset_obj, str):
+                    raise ToolError("offset_object must be a string", code=-32602)
+                clean_settings["offset_object"] = offset_obj
+            obj_offset = settings.get("object_offset")
+            if obj_offset is not None:
+                if not isinstance(obj_offset, list) or len(obj_offset) != 3:
+                    raise ToolError("object_offset must be an array of 3 numbers", code=-32602)
+                try:
+                    clean_settings["object_offset"] = [float(v) for v in obj_offset]
+                except Exception:
+                    raise ToolError("object_offset must be an array of 3 numbers", code=-32602)
         if mod_type == "solidify":
             thickness = settings.get("thickness")
             if thickness is not None:
@@ -1927,9 +2293,63 @@ finally:
                 if not isinstance(ngon_method, str) or ngon_method.upper() not in ngon_valid:
                     raise ToolError("ngon_method must be a valid triangulate method", code=-32602)
                 clean_settings["ngon_method"] = ngon_method.upper()
+        if mod_type == "screw":
+            angle = settings.get("angle_degrees", settings.get("angle", 360.0))
+            steps = settings.get("steps")
+            axis = (settings.get("axis") or "Z").upper()
+            try:
+                clean_settings["angle"] = float(angle)
+            except Exception:
+                raise ToolError("angle_degrees must be a number", code=-32602)
+            if steps is not None:
+                try:
+                    clean_settings["steps"] = int(steps)
+                except Exception:
+                    raise ToolError("steps must be an integer", code=-32602)
+            if axis not in ("X", "Y", "Z"):
+                raise ToolError("axis must be X, Y, or Z", code=-32602)
+            clean_settings["axis"] = axis
+        if mod_type == "edge_split":
+            split_angle = settings.get("split_angle", 30.0)
+            try:
+                clean_settings["split_angle"] = float(split_angle)
+            except Exception:
+                raise ToolError("split_angle must be a number", code=-32602)
+            for key in ("use_edge_angle", "use_edge_sharp"):
+                val = settings.get(key)
+                if val is not None:
+                    if not isinstance(val, bool):
+                        raise ToolError(f"{key} must be a boolean", code=-32602)
+                    clean_settings[key] = val
+        if mod_type == "shrinkwrap":
+            target_obj = settings.get("target")
+            if target_obj is not None and not isinstance(target_obj, str):
+                raise ToolError("target must be a string", code=-32602)
+            if target_obj is not None:
+                clean_settings["target"] = target_obj
+            offset = settings.get("offset")
+            if offset is not None:
+                try:
+                    clean_settings["offset"] = float(offset)
+                except Exception:
+                    raise ToolError("offset must be a number", code=-32602)
+            wrap_method = settings.get("wrap_method")
+            if wrap_method is not None:
+                if not isinstance(wrap_method, str):
+                    raise ToolError("wrap_method must be a string", code=-32602)
+                valid_wrap = {"NEAREST_SURFACEPOINT", "PROJECT", "NEAREST_VERTEX", "TARGET_PROJECT"}
+                wm_upper = wrap_method.upper()
+                if wm_upper not in valid_wrap:
+                    raise ToolError("wrap_method is invalid", code=-32602)
+                clean_settings["wrap_method"] = wm_upper
+        if mod_type == "lattice":
+            lattice = settings.get("lattice")
+            if lattice is None or not isinstance(lattice, str):
+                raise ToolError("lattice must be a string", code=-32602)
+            clean_settings["lattice"] = lattice
         mod_bpy_type = type_map[mod_type]
         code = f"""
-import bpy
+import bpy, math
 obj = bpy.data.objects.get({json.dumps(name)})
 if obj is None:
     raise ValueError("Object not found")
@@ -1944,6 +2364,15 @@ elif {json.dumps(mod_type)} == "array":
     if "relative_offset" in settings:
         mod.use_relative_offset = True
         mod.relative_offset_displace = tuple(settings["relative_offset"])
+    if "offset_object" in settings:
+        off_obj = bpy.data.objects.get(settings["offset_object"])
+        if off_obj is None:
+            raise ValueError("Offset object not found")
+        mod.use_object_offset = True
+        mod.offset_object = off_obj
+    if "object_offset" in settings:
+        mod.use_constant_offset = True
+        mod.constant_offset_displace = tuple(settings["object_offset"])
 elif {json.dumps(mod_type)} == "solidify":
     if "thickness" in settings:
         mod.thickness = settings["thickness"]
@@ -1974,6 +2403,36 @@ elif {json.dumps(mod_type)} == "triangulate":
         mod.quad_method = settings["quad_method"]
     if "ngon_method" in settings:
         mod.ngon_method = settings["ngon_method"]
+elif {json.dumps(mod_type)} == "screw":
+    if "angle" in settings:
+        mod.angle = math.radians(settings["angle"])
+    if "steps" in settings:
+        mod.steps = settings["steps"]
+    if "axis" in settings:
+        mod.axis = settings["axis"]
+elif {json.dumps(mod_type)} == "edge_split":
+    if "split_angle" in settings:
+        mod.split_angle = math.radians(settings["split_angle"])
+    if "use_edge_angle" in settings:
+        mod.use_edge_angle = settings["use_edge_angle"]
+    if "use_edge_sharp" in settings:
+        mod.use_edge_sharp = settings["use_edge_sharp"]
+elif {json.dumps(mod_type)} == "shrinkwrap":
+    if "target" in settings:
+        tgt = bpy.data.objects.get(settings["target"])
+        if tgt is None:
+            raise ValueError("Shrinkwrap target not found")
+        mod.target = tgt
+    if "offset" in settings:
+        mod.offset = settings["offset"]
+    if "wrap_method" in settings:
+        mod.wrap_method = settings["wrap_method"]
+elif {json.dumps(mod_type)} == "lattice":
+    if "lattice" in settings:
+        lat = bpy.data.objects.get(settings["lattice"])
+        if lat is None:
+            raise ValueError("Lattice object not found")
+        mod.object = lat
 """
         data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
         if not data.get("ok"):
@@ -2005,6 +2464,52 @@ bpy.ops.object.modifier_apply(modifier=mod.name)
         if not data.get("ok"):
             return _make_tool_result(data.get("error") or "Failed to apply modifier", is_error=True)
         return _make_tool_result(f"Applied modifier {modifier} on {name}", is_error=False)
+
+    def _tool_list_modifiers(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        name = args.get("name")
+        if not isinstance(name, str):
+            raise ToolError("name must be a string", code=-32602)
+        code = f"""
+import bpy
+name = {json.dumps(name)}
+obj = bpy.data.objects.get(name)
+if obj is None:
+    raise ValueError("Object not found")
+mods = []
+for mod in obj.modifiers:
+    info = {{"name": mod.name, "type": mod.type}}
+    for field in (
+        "levels", "render_levels", "width", "segments", "thickness", "ratio",
+        "merge_threshold", "use_clip", "use_mirror_merge", "use_relative_offset",
+        "relative_offset_displace", "use_constant_offset", "constant_offset_displace",
+        "use_object_offset", "offset_object", "split_angle", "use_edge_angle", "use_edge_sharp",
+        "wrap_method", "offset", "axis", "angle", "steps"
+    ):
+        try:
+            val = getattr(mod, field, None)
+        except Exception:
+            continue
+        if hasattr(val, "name"):
+            val = val.name
+        elif hasattr(val, "to_tuple"):
+            try:
+                val = list(val)
+            except Exception:
+                pass
+        info[field] = val
+    mods.append(info)
+result = mods
+"""
+        data = _bridge_request("/exec", payload={"code": code}, timeout=5.0)
+        if not data.get("ok"):
+            return _make_tool_result(data.get("error") or "Failed to list modifiers", is_error=True)
+        mods = data.get("result") or []
+        if isinstance(mods, list):
+            names = [f"{m.get('name')}({m.get('type')})" for m in mods if isinstance(m, dict)]
+            text = ", ".join(names) if names else "no modifiers"
+        else:
+            text = "listed modifiers"
+        return _make_tool_result(text, is_error=False)
 
     def _tool_boolean(self, args: Dict[str, Any]) -> Dict[str, Any]:
         name = args.get("name")
