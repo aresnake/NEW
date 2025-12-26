@@ -151,7 +151,7 @@ class ToolRequestStore:
 
     def _load(self) -> None:
         get_tool_request_dir().mkdir(parents=True, exist_ok=True)
-        warn = ('TOOL_REQUEST_DATA_DIR' not in os.environ)
+        warn = (os.environ.get('BLENDER_MCP_SILENCE_TOOL_REQUEST_WARNINGS') != '1')
         base_items = self._load_jsonl(get_tool_request_file(), warn_on_bad_line=warn)
         updates = self._load_jsonl(get_tool_request_updates_file(), warn_on_bad_line=warn)
         for item in base_items:

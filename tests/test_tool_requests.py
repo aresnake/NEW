@@ -205,6 +205,7 @@ def test_corrupted_jsonl_lines_skipped(monkeypatch, tmp_path):
     # precreate files with a bad line
     tmp_path.joinpath("tool_requests.jsonl").write_text('{"id": "good", "need": "x", "why": "y", "session": "s"}\n{bad line}', encoding="utf-8")
     _setup_env(monkeypatch, tmp_path)
+    monkeypatch.delenv("BLENDER_MCP_SILENCE_TOOL_REQUEST_WARNINGS", raising=False)
     with pytest.warns(UserWarning, match=r"tool-request: skipping corrupted line"):
         registry = tools.ToolRegistry()
     assert "good" in registry._tool_request_store.requests
