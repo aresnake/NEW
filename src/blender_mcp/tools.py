@@ -143,7 +143,8 @@ class ToolRequestStore:
                 try:
                     items.append(json.loads(line))
                 except json.JSONDecodeError as exc:
-                    warnings.warn(f"tool-request: skipping corrupted line in {path.name}: {exc}")
+                    if warn_on_bad_line:
+                warnings.warn(f"tool-request: skipping corrupted line in {path.name}: {exc}")
         except Exception as exc:  # noqa: BLE001
             warnings.warn(f"tool-request: failed reading {path}: {exc}")
         return items
