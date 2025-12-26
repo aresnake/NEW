@@ -1,7 +1,17 @@
-*.py text eol=lf
-*.md text eol=lf
-*.json text eol=lf
-*.toml text eol=lf
-*.yml text eol=lf
-*.yaml text eol=lf
-*.ps1 text eol=crlf
+# Normalize text files to LF in repo
+*               text=auto
+
+*.py            text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+*.json          text eol=lf
+*.jsonl         text eol=lf
+*.md            text eol=lf
+*.txt           text eol=lf
+*.toml          text eol=lf
+*.ini           text eol=lf
+
+# Keep Windows scripts as CRLF if you ever add them
+*.ps1           text eol=crlf
+*.bat           text eol=crlf
+*.cmd           text eol=crlf
