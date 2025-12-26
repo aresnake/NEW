@@ -21,9 +21,15 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 RUNS_DIR = ROOT_DIR / "runs"
 RUNS_FILE = RUNS_DIR / "actions.jsonl"
 REQUESTS_FILE = RUNS_DIR / "requests.jsonl"
-TOOL_REQUEST_DIR = Path(os.environ.get("TOOL_REQUEST_DATA_DIR") or (ROOT_DIR / "data"))
-TOOL_REQUEST_FILE = TOOL_REQUEST_DIR / "tool_requests.jsonl"
-TOOL_REQUEST_UPDATES_FILE = TOOL_REQUEST_DIR / "tool_requests_updates.jsonl"
+def get_tool_request_dir() -> Path:
+    return Path(os.environ.get("TOOL_REQUEST_DATA_DIR") or (ROOT_DIR / "data"))
+
+def get_tool_request_file() -> Path:
+    return get_tool_request_dir() / "tool_requests.jsonl"
+
+def get_tool_request_updates_file() -> Path:
+    return get_tool_request_dir() / "tool_requests_updates.jsonl"
+
 
 
 def _get_timeout(default: float) -> float:
@@ -143,9 +149,9 @@ class ToolRequestStore:
         return items
 
     def _load(self) -> None:
-        TOOL_REQUEST_DIR.mkdir(parents=True, exist_ok=True)
-        base_items = self._load_jsonl(TOOL_REQUEST_FILE)
-        updates = self._load_jsonl(TOOL_REQUEST_UPDATES_FILE)
+        get_tool_request_dir().mkdir(parents=True, exist_ok=True)
+        base_items = self._load_jsonl(get_tool_request_file())
+        updates = self._load_jsonl(get_tool_request_updates_file())
         for item in base_items:
             if isinstance(item, dict) and "id" in item:
                 self.requests[item["id"]] = self._normalize_entry(item)
@@ -173,7 +179,7 @@ class ToolRequestStore:
         self.requests[req_id] = self._normalize_entry(merged)
 
     def _write_jsonl(self, path: Path, entry: Dict[str, Any]) -> None:
-        TOOL_REQUEST_DIR.mkdir(parents=True, exist_ok=True)
+        get_tool_request_dir().mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
@@ -346,7 +352,7 @@ class ToolRequestStore:
         }
         entry.setdefault("depends_on", [])
         entry.setdefault("blocks", [])
-        self._write_jsonl(TOOL_REQUEST_FILE, entry)
+        self._write_jsonl(get_tool_request_file(), entry)
         self.requests[entry["id"]] = self._normalize_entry(entry)
         return entry
 
@@ -454,7 +460,7 @@ class ToolRequestStore:
         }
         if "updated_by" in clean:
             record["updated_by"] = clean["updated_by"]
-        self._write_jsonl(TOOL_REQUEST_UPDATES_FILE, record)
+        self._write_jsonl(get_tool_request_updates_file(), record)
         return self.requests[req_id]
 
     def delete(self, req_id: str) -> Dict[str, Any]:
@@ -462,7 +468,7 @@ class ToolRequestStore:
             raise ToolError("request not found", code=-32602)
         self.requests.pop(req_id, None)
         record = {"id": req_id, "ts": datetime.now(timezone.utc).isoformat(), "delete": True}
-        self._write_jsonl(TOOL_REQUEST_UPDATES_FILE, record)
+        self._write_jsonl(get_tool_request_updates_file(), record)
         return {"ok": True, "deleted_id": req_id}
 
     def purge(self, *, statuses: Optional[List[str]] = None, older_than_days: Optional[int] = None) -> List[str]:
@@ -1439,7 +1445,7 @@ light_obj.rotation_euler = (math.radians({rotation[0]}), math.radians({rotation[
         except ToolError as exc:
             return _make_tool_result(str(exc), is_error=True)
         _append_request({"type": "tool-request", "id": entry["id"], "payload": payload})
-        return _make_tool_result(json.dumps({"ok": True, "id": entry["id"], "status": entry.get("status"), "stored_path": str(TOOL_REQUEST_FILE)}), is_error=False)
+        return _make_tool_result(json.dumps({"ok": True, "id": entry["id"], "status": entry.get("status"), "stored_path": str(get_tool_request_file())}), is_error=False)
 
     def _tool_tool_request_list(self, args: Dict[str, Any]) -> Dict[str, Any]:
         filters = args.get("filters") or {}
