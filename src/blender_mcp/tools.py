@@ -2,6 +2,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
 import warnings
@@ -597,20 +598,51 @@ class ToolRequestStore:
 
 def _atomic_append_jsonl(path: Path, line: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_name(f"{path.name}.tmp-{uuid.uuid4().hex}")
-    existing: bytes = b""
-    if path.exists():
+    lock_path = path.with_suffix(path.suffix + ".lock")
+    deadline = time.monotonic() + 0.2
+    while time.monotonic() < deadline:
         try:
-            existing = path.read_bytes()
+            lock_path.touch(mode=0o600, exist_ok=False)
+        except FileExistsError:
+            time.sleep(0.01)
+            continue
         except Exception:
-            existing = b""
-    with tmp_path.open("wb") as fh:
-        if existing:
-            fh.write(existing)
-        fh.write(line.encode("utf-8"))
-        fh.flush()
-        os.fsync(fh.fileno())
-    tmp_path.replace(path)
+            break
+        try:
+            with path.open("a", encoding="utf-8") as fh:
+                fh.write(line)
+                fh.flush()
+                os.fsync(fh.fileno())
+            return
+        finally:
+            try:
+                lock_path.unlink()
+            except Exception:
+                pass
+
+    tmp_path = path.with_name(f"{path.name}.tmp-{uuid.uuid4().hex}")
+    try:
+        with tmp_path.open("wb") as out:
+            if path.exists():
+                try:
+                    with path.open("rb") as src:
+                        while True:
+                            chunk = src.read(8192)
+                            if not chunk:
+                                break
+                            out.write(chunk)
+                except Exception:
+                    pass
+            out.write(line.encode("utf-8"))
+            out.flush()
+            os.fsync(out.fileno())
+        tmp_path.replace(path)
+    finally:
+        if tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except Exception:
+                pass
 
 
 def _bridge_request(path: str, payload: Optional[Dict[str, Any]] = None, timeout: float = 0.5) -> Any:
